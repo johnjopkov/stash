@@ -21,6 +21,8 @@ interface IInterfaceConfig {
   queryConfig: IQueryConfig;
   imageLightbox: ConfigImageLightboxInput;
   imageLightboxViewMode?: LightboxViewMode;
+  imageLightboxWallSingleColumn?: boolean;
+  imageLightboxWallSize?: number;
   // Partial is required because using View makes the key mandatory
   viewConfig: Partial<Record<View, IViewConfig>>;
 }

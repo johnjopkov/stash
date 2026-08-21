@@ -4,7 +4,6 @@ import * as GQL from "src/core/generated-graphql";
 const ZOOM_STEP = 1.1;
 const ZOOM_FACTOR = 700;
 const SCROLL_GROUP_THRESHOLD = 8;
-const SCROLL_GROUP_EXIT_THRESHOLD = 4;
 const SCROLL_INFINITE_THRESHOLD = 10;
 const SCROLL_PAN_STEP = 75;
 const SCROLL_PAN_FACTOR = 2;
@@ -113,6 +112,7 @@ export const LightboxImage: React.FC<IProps> = ({
   const prevDiff = useRef<number | undefined>();
 
   const scrollAttempts = useRef(0);
+  const scrollGroupDelta = useRef(0);
 
   useEffect(() => {
     const box = container.current;
@@ -296,17 +296,18 @@ export const LightboxImage: React.FC<IProps> = ({
     }
   }
 
-  function onLeftScroll(
-    ev: React.WheelEvent,
-    scrollable: boolean,
-    infinite: boolean
-  ) {
+  function onLeftScroll(scrollable: boolean, infinite: boolean) {
     if (infinite) {
-      // for infinite scrolls, only change once per scroll "group"
-      if (ev.deltaY <= -SCROLL_GROUP_THRESHOLD) {
-        if (!inScrollGroup.current) {
-          onLeft();
-        }
+      // Smooth wheels and trackpads often emit deltas smaller than the
+      // threshold. Use the gesture's accumulated distance so navigation does
+      // not depend on a single fast event. A fitted image can navigate on the
+      // first event because there is no content to pan.
+      if (
+        (!scrollable || scrollGroupDelta.current <= -SCROLL_GROUP_THRESHOLD) &&
+        !inScrollGroup.current
+      ) {
+        inScrollGroup.current = true;
+        onLeft();
       }
     } else {
       // #2535 - require additional scrolls before changing page
@@ -322,17 +323,14 @@ export const LightboxImage: React.FC<IProps> = ({
     }
   }
 
-  function onRightScroll(
-    ev: React.WheelEvent,
-    scrollable: boolean,
-    infinite: boolean
-  ) {
+  function onRightScroll(scrollable: boolean, infinite: boolean) {
     if (infinite) {
-      // for infinite scrolls, only change once per scroll "group"
-      if (ev.deltaY >= SCROLL_GROUP_THRESHOLD) {
-        if (!inScrollGroup.current) {
-          onRight();
-        }
+      if (
+        (!scrollable || scrollGroupDelta.current >= SCROLL_GROUP_THRESHOLD) &&
+        !inScrollGroup.current
+      ) {
+        inScrollGroup.current = true;
+        onRight();
       }
     } else {
       // #2535 - require additional scrolls before changing page
@@ -363,9 +361,9 @@ export const LightboxImage: React.FC<IProps> = ({
     // #2389 - if scroll up and at top, then go to previous image
     // if scroll down and at bottom, then go to next image
     if (newPositionY > maxY && positionY === maxY) {
-      onLeftScroll(ev, scrollable, infinite);
+      onLeftScroll(scrollable, infinite);
     } else if (newPositionY < minY && positionY === minY) {
-      onRightScroll(ev, scrollable, infinite);
+      onRightScroll(scrollable, infinite);
     } else {
       scrollAttempts.current = 0;
 
@@ -390,6 +388,15 @@ export const LightboxImage: React.FC<IProps> = ({
       (firstDeltaY !== null &&
         Math.abs(firstDeltaY) < SCROLL_INFINITE_THRESHOLD);
 
+    if (
+      firstDeltaY === null ||
+      (scrollGroupDelta.current !== 0 &&
+        Math.sign(scrollGroupDelta.current) !== Math.sign(ev.deltaY))
+    ) {
+      scrollGroupDelta.current = 0;
+    }
+    scrollGroupDelta.current += ev.deltaY;
+
     switch (getScrollMode(ev)) {
       case GQL.ImageLightboxScrollMode.Zoom: {
         let percent: number;
@@ -408,11 +415,8 @@ export const LightboxImage: React.FC<IProps> = ({
     if (firstDeltaY === null) {
       firstScroll.current = ev.deltaY;
     }
-    if (absDeltaY >= SCROLL_GROUP_THRESHOLD) {
+    if (Math.abs(scrollGroupDelta.current) >= SCROLL_GROUP_THRESHOLD) {
       inScrollGroup.current = true;
-    } else if (absDeltaY <= SCROLL_GROUP_EXIT_THRESHOLD) {
-      // only "exit" the scroll group if speed has slowed considerably
-      inScrollGroup.current = false;
     }
     debouncedScrollReset();
   }

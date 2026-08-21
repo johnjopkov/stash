@@ -1053,8 +1053,10 @@
       },
       "view_mode": {
         "carousel": "Single image",
+        "image_size": "Image size",
         "label": "Layout",
-        "stream": "Continuous stream"
+        "single_column": "Single column",
+        "stream": "Wall"
       }
     },
     "merge": {

@@ -67,6 +67,28 @@
       &-inline {
         display: none;
       }
+
+      &-popover {
+        max-height: calc(100vh - 5rem);
+        max-width: calc(100vw - 1rem);
+        overflow-y: auto;
+        width: 22rem;
+
+        .form-control {
+          max-width: 100%;
+          min-width: 0;
+          text-overflow: ellipsis;
+        }
+      }
+
+      &-wall-size {
+        align-items: center;
+        display: flex;
+
+        input[type="range"] {
+          width: 100%;
+        }
+      }
     }
 
     &-right {
@@ -273,6 +295,31 @@
       display: flex;
       height: 6rem;
       justify-content: center;
+    }
+
+    &-single-column {
+      align-items: center;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+    }
+
+    &-single-item {
+      align-items: center;
+      display: flex;
+      flex: 0 0 auto;
+      height: 100dvh;
+      justify-content: center;
+      width: 100%;
+
+      img,
+      video {
+        height: auto;
+        max-height: 100%;
+        max-width: 100%;
+        object-fit: contain;
+        width: auto;
+      }
     }
 
     &-sentinel {

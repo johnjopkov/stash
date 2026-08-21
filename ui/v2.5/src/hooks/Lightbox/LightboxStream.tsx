@@ -16,6 +16,7 @@ import { ILightboxImage, LightboxStreamLoader } from "./types";
 const CLASSNAME = "Lightbox-stream";
 
 interface IStreamPhoto extends PhotoProps {
+  fullSrc: string;
   globalIndex: number;
   image: ILightboxImage;
   video: boolean;
@@ -29,6 +30,8 @@ interface IProps {
   pageSize: number;
   totalCount: number;
   streamLoader?: LightboxStreamLoader;
+  singleColumn: boolean;
+  wallSize: number;
   removedImageIds: Set<string>;
   onActiveImage: (image: ILightboxImage, globalIndex: number) => void;
   onError: (error: unknown) => void;
@@ -83,11 +86,24 @@ const StreamImage: React.FC<RenderImageProps> = (props) => {
   );
 };
 
-function targetRowHeight(containerWidth: number) {
-  if (containerWidth < 576) return 260;
-  if (containerWidth < 1200) return 340;
-  return 440;
-}
+const breakpointWallHeights = [
+  { minWidth: 0, heights: [160, 220, 280, 360] },
+  { minWidth: 576, heights: [180, 260, 360, 480] },
+  { minWidth: 1200, heights: [220, 320, 440, 600] },
+];
+
+const SingleColumnImage: React.FC<{ photo: IStreamPhoto }> = ({ photo }) => (
+  <div
+    className={`${CLASSNAME}-item ${CLASSNAME}-single-item`}
+    data-lightbox-stream-index={photo.globalIndex}
+  >
+    {photo.video ? (
+      <video autoPlay loop muted playsInline src={photo.src} />
+    ) : (
+      <img src={photo.fullSrc} loading="lazy" alt={photo.alt} />
+    )}
+  </div>
+);
 
 export const LightboxStream: React.FC<IProps> = ({
   images,
@@ -97,6 +113,8 @@ export const LightboxStream: React.FC<IProps> = ({
   pageSize,
   totalCount,
   streamLoader,
+  singleColumn,
+  wallSize,
   removedImageIds,
   onActiveImage,
   onError,
@@ -109,6 +127,8 @@ export const LightboxStream: React.FC<IProps> = ({
   const mountedRef = useRef(true);
   const prependSnapshot = useRef<{ height: number; top: number }>();
   const activeFrame = useRef<number>();
+  const activeIndexRef = useRef<number>();
+  const previousLayout = useRef({ singleColumn, wallSize });
 
   const [loadedPages, setLoadedPages] = useState(
     () => new Map<number, ILightboxImage[]>([[page, images]])
@@ -159,6 +179,7 @@ export const LightboxStream: React.FC<IProps> = ({
         return [
           {
             src,
+            fullSrc: video ? src : image.paths.image || src,
             srcSet: video
               ? undefined
               : imageThumbnailSrcSet(image.paths.thumbnail),
@@ -219,6 +240,7 @@ export const LightboxStream: React.FC<IProps> = ({
         });
 
       if (closest) {
+        activeIndexRef.current = closest.photo.globalIndex;
         onActiveImage(closest.photo.image, closest.photo.globalIndex);
       }
     });
@@ -256,6 +278,46 @@ export const LightboxStream: React.FC<IProps> = ({
   useEffect(() => {
     updateActiveImage();
   }, [updateActiveImage]);
+
+  useLayoutEffect(() => {
+    const previous = previousLayout.current;
+    previousLayout.current = { singleColumn, wallSize };
+    if (
+      previous.singleColumn === singleColumn &&
+      previous.wallSize === wallSize
+    ) {
+      return;
+    }
+
+    const container = containerRef.current;
+    const activeIndex =
+      activeIndexRef.current ?? (page - 1) * pageSize + initialIndex;
+    const target = container?.querySelector<HTMLElement>(
+      `[data-lightbox-stream-index="${activeIndex.toString()}"]`
+    );
+    if (!container || !target) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    container.scrollTop +=
+      targetRect.top -
+      containerRect.top -
+      (container.clientHeight - targetRect.height) / 2;
+    updateActiveImage();
+  }, [initialIndex, page, pageSize, singleColumn, updateActiveImage, wallSize]);
+
+  const targetRowHeight = useCallback(
+    (containerWidth: number) => {
+      let height = breakpointWallHeights[0].heights[wallSize];
+      breakpointWallHeights.forEach((breakpoint) => {
+        if (containerWidth >= breakpoint.minWidth) {
+          height = breakpoint.heights[wallSize];
+        }
+      });
+      return height;
+    },
+    [wallSize]
+  );
 
   const loadAdjacentPage = useCallback(
     async (requestedPage: number, direction: "previous" | "next") => {
@@ -336,12 +398,23 @@ export const LightboxStream: React.FC<IProps> = ({
           <LoadingIndicator />
         </div>
       )}
-      <Gallery
-        photos={photos}
-        renderImage={StreamImage}
-        margin={2}
-        targetRowHeight={targetRowHeight}
-      />
+      {singleColumn ? (
+        <div className={`${CLASSNAME}-single-column`}>
+          {photos.map((photo) => (
+            <SingleColumnImage
+              key={photo.key ?? photo.globalIndex}
+              photo={photo}
+            />
+          ))}
+        </div>
+      ) : (
+        <Gallery
+          photos={photos}
+          renderImage={StreamImage}
+          margin={2}
+          targetRowHeight={targetRowHeight}
+        />
+      )}
       {loadingDirection === "next" && (
         <div className={`${CLASSNAME}-loading`}>
           <LoadingIndicator />

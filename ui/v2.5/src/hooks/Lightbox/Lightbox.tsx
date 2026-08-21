@@ -70,6 +70,8 @@ const CLASSNAME_INDICATOR = `${CLASSNAME_HEADER}-indicator`;
 const CLASSNAME_OPTIONS = `${CLASSNAME_HEADER}-options`;
 const CLASSNAME_OPTIONS_ICON = `${CLASSNAME_OPTIONS}-icon`;
 const CLASSNAME_OPTIONS_INLINE = `${CLASSNAME_OPTIONS}-inline`;
+const CLASSNAME_OPTIONS_POPOVER = `${CLASSNAME_OPTIONS}-popover`;
+const CLASSNAME_WALL_SIZE = `${CLASSNAME_OPTIONS}-wall-size`;
 const CLASSNAME_RIGHT = `${CLASSNAME_HEADER}-right`;
 const CLASSNAME_FOOTER = `${CLASSNAME}-footer`;
 const CLASSNAME_FOOTER_LEFT = `${CLASSNAME_FOOTER}-left`;
@@ -296,14 +298,33 @@ export const LightboxComponent: React.FC<IProps> = ({
 
   const lightboxSettings = interfaceLocalForage.data?.imageLightbox;
   const viewMode =
-    interfaceLocalForage.data?.imageLightboxViewMode ??
-    LightboxViewMode.Carousel;
+    interfaceLocalForage.data?.imageLightboxViewMode ?? LightboxViewMode.Stream;
+  const wallSingleColumn =
+    interfaceLocalForage.data?.imageLightboxWallSingleColumn ?? true;
+  const wallSize = Math.max(
+    0,
+    Math.min(3, interfaceLocalForage.data?.imageLightboxWallSize ?? 2)
+  );
 
   function setViewMode(value: LightboxViewMode) {
     setActiveStreamImage(undefined);
     setInterfaceLocalForage((prev) => ({
       ...prev,
       imageLightboxViewMode: value,
+    }));
+  }
+
+  function setWallSingleColumn(value: boolean) {
+    setInterfaceLocalForage((prev) => ({
+      ...prev,
+      imageLightboxWallSingleColumn: value,
+    }));
+  }
+
+  function setWallSize(value: number) {
+    setInterfaceLocalForage((prev) => ({
+      ...prev,
+      imageLightboxWallSize: Math.max(0, Math.min(3, value)),
     }));
   }
 
@@ -1016,7 +1037,44 @@ export const LightboxComponent: React.FC<IProps> = ({
               </Form.Text>
             </Form.Group>
           </>
-        ) : undefined}
+        ) : (
+          <>
+            <Form.Group controlId="wallSingleColumn" className="mb-2">
+              <Form.Check
+                type="checkbox"
+                label={intl.formatMessage({
+                  id: "dialogs.lightbox.view_mode.single_column",
+                })}
+                checked={wallSingleColumn}
+                onChange={(event) =>
+                  setWallSingleColumn(event.currentTarget.checked)
+                }
+              />
+            </Form.Group>
+            <Form.Group controlId="wallSize" as={Row} className="mb-1">
+              <Col xs={4}>
+                <Form.Label className="col-form-label">
+                  <FormattedMessage id="dialogs.lightbox.view_mode.image_size" />
+                </Form.Label>
+              </Col>
+              <Col xs={8} className={CLASSNAME_WALL_SIZE}>
+                <Form.Control
+                  type="range"
+                  min={0}
+                  max={3}
+                  value={wallSize}
+                  disabled={wallSingleColumn}
+                  aria-label={intl.formatMessage({
+                    id: "dialogs.lightbox.view_mode.image_size",
+                  })}
+                  onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
+                    setWallSize(Number.parseInt(event.currentTarget.value, 10))
+                  }
+                />
+              </Col>
+            </Form.Group>
+          </>
+        )}
       </>
     );
   }
@@ -1123,7 +1181,7 @@ export const LightboxComponent: React.FC<IProps> = ({
                 >
                   {({ placement, arrowProps, show: _show, ...props }) => (
                     <div
-                      className="popover"
+                      className={cx("popover", CLASSNAME_OPTIONS_POPOVER)}
                       {...props}
                       style={{ ...props.style }}
                     >
@@ -1254,6 +1312,8 @@ export const LightboxComponent: React.FC<IProps> = ({
             pageSize={pageSize}
             totalCount={displayTotal}
             streamLoader={streamLoader}
+            singleColumn={wallSingleColumn}
+            wallSize={wallSize}
             removedImageIds={removedImageIds}
             onActiveImage={handleActiveStreamImage}
             onError={handleStreamError}
