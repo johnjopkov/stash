@@ -67,6 +67,7 @@ import { OrganizedCriterionOption } from "src/models/list-filter/criteria/organi
 import { SidebarAgeFilter } from "../List/Filters/SidebarAgeFilter";
 import { PerformerAgeCriterionOption } from "src/models/list-filter/images";
 import { SidebarFolderFilter } from "../List/Filters/FolderFilter";
+import { imageThumbnailSrcSet } from "src/utils/imageSources";
 
 interface IImageWallProps {
   images: GQL.SlimImageDataFragment[];
@@ -117,6 +118,10 @@ const ImageWall: React.FC<IImageWallProps> = ({
         image.paths.preview !== ""
           ? image.paths.preview!
           : image.paths.thumbnail!,
+      srcSet:
+        image.paths.preview !== ""
+          ? undefined
+          : imageThumbnailSrcSet(image.paths.thumbnail),
       width: image.visual_files?.[0]?.width ?? 0,
       height: image.visual_files?.[0]?.height ?? 0,
       tabIndex: index,

@@ -32,6 +32,25 @@ type imageRoutes struct {
 	fileGetter  models.FileGetter
 }
 
+var supportedImageThumbnailWidths = map[int]struct{}{
+	models.DefaultGthumbWidth: {},
+	1280:                      {},
+	1920:                      {},
+}
+
+func imageThumbnailWidth(value string) int {
+	width, err := strconv.Atoi(value)
+	if err != nil {
+		return models.DefaultGthumbWidth
+	}
+
+	if _, ok := supportedImageThumbnailWidths[width]; !ok {
+		return models.DefaultGthumbWidth
+	}
+
+	return width
+}
+
 func (rs imageRoutes) Routes() chi.Router {
 	r := chi.NewRouter()
 
@@ -53,7 +72,8 @@ func (rs imageRoutes) Thumbnail(w http.ResponseWriter, r *http.Request) {
 
 func (rs imageRoutes) serveThumbnail(w http.ResponseWriter, r *http.Request, img *models.Image, modTime *time.Time) {
 	mgr := manager.GetInstance()
-	filepath := mgr.Paths.Generated.GetThumbnailPath(img.Checksum, models.DefaultGthumbWidth)
+	thumbnailWidth := imageThumbnailWidth(r.URL.Query().Get("size"))
+	filepath := mgr.Paths.Generated.GetThumbnailPath(img.Checksum, thumbnailWidth)
 
 	// if the thumbnail doesn't exist, encode on the fly
 	exists, _ := fsutil.FileExists(filepath)
@@ -84,7 +104,7 @@ func (rs imageRoutes) serveThumbnail(w http.ResponseWriter, r *http.Request, img
 		}
 
 		encoder := image.NewThumbnailEncoder(manager.GetInstance().FFMpeg, manager.GetInstance().FFProbe, clipPreviewOptions)
-		data, err := encoder.GetThumbnail(f, models.DefaultGthumbWidth)
+		data, err := encoder.GetThumbnail(f, thumbnailWidth)
 		if err != nil {
 			// don't log for unsupported image format
 			// don't log for file not found - can optionally be logged in serveImage
