@@ -94,6 +94,9 @@ const MIN_VALID_INTERVAL_SECONDS = 1;
 const MIN_ZOOM = 0.1;
 const SCROLL_ZOOM_TIMEOUT = 250;
 const ZOOM_NONE_EPSILON = 0.015;
+const MAX_CLICK_MOVEMENT = 5;
+const NAVIGATION_CLICK_EXCLUSION =
+  "button, a, input, select, textarea, label, [role='button'], .popover, .modal";
 
 interface IProps {
   images: ILightboxImage[];
@@ -170,6 +173,7 @@ export const LightboxComponent: React.FC<IProps> = ({
   const [deleteTarget, setDeleteTarget] = useState<ILightboxImage | null>(null);
   const lastDKeyTime = useRef<number>(0);
   const [navOffset, setNavOffset] = useState<React.CSSProperties | undefined>();
+  const navigationPointerDown = useRef<{ x: number; y: number }>();
 
   // An in-flight page switch's intended landing, set synchronously by
   // startPageSwitch *before* pageCallback. The landing is an explicit target —
@@ -212,14 +216,15 @@ export const LightboxComponent: React.FC<IProps> = ({
   const [zoom, setZoom] = useState(1);
 
   function updateZoom(v: number) {
+    let appliedZoom = v;
     if (v < MIN_ZOOM) {
-      setZoom(MIN_ZOOM);
+      appliedZoom = MIN_ZOOM;
     } else if (Math.abs(v - 1) < ZOOM_NONE_EPSILON) {
       // "snap to 1" effect: if new zoom is close to 1, set to 1
-      setZoom(1);
-    } else {
-      setZoom(v);
+      appliedZoom = 1;
     }
+    setZoom(appliedZoom);
+    return appliedZoom;
   }
 
   const [resetPosition, setResetPosition] = useState(false);
@@ -362,11 +367,6 @@ export const LightboxComponent: React.FC<IProps> = ({
 
   const slideshowDelay =
     savedDelay ?? configuredDelay ?? DEFAULT_SLIDESHOW_DELAY;
-
-  const scrollAttemptsBeforeChange = Math.max(
-    0,
-    config?.interface.imageLightbox.scrollAttemptsBeforeChange ?? 0
-  );
 
   const disableAnimation = config?.interface.imageLightbox.disableAnimation;
 
@@ -571,11 +571,6 @@ export const LightboxComponent: React.FC<IProps> = ({
     [hide]
   );
 
-  const handleClose = (e: React.MouseEvent<HTMLDivElement>) => {
-    const { className } = e.target as Element;
-    if (className?.includes?.(CLASSNAME_IMAGE)) close();
-  };
-
   const handleLeft = useCallback(
     (isUserAction = true) => {
       if (isSwitchingPageRef.current) return;
@@ -628,12 +623,65 @@ export const LightboxComponent: React.FC<IProps> = ({
     [images, pageCallback, index, disableAnimation, setInstant, startPageSwitch]
   );
 
+  const handleNavigationPointerDown = (
+    e: React.PointerEvent<HTMLDivElement>
+  ) => {
+    revealControls();
+    navigationPointerDown.current =
+      e.button === 0 ? { x: e.clientX, y: e.clientY } : undefined;
+  };
+
+  const handleNavigationClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const start = navigationPointerDown.current;
+    navigationPointerDown.current = undefined;
+
+    if (
+      viewMode !== LightboxViewMode.Carousel ||
+      !allowNavigation ||
+      e.button !== 0 ||
+      !start ||
+      deleteTarget !== null
+    ) {
+      return;
+    }
+
+    const target = e.target as Element;
+    if (target.closest(NAVIGATION_CLICK_EXCLUSION)) return;
+
+    const movement = Math.hypot(e.clientX - start.x, e.clientY - start.y);
+    if (movement > MAX_CLICK_MOVEMENT) return;
+
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    if (e.clientX < rect.left + rect.width / 2) {
+      handleLeft();
+    } else {
+      handleRight();
+    }
+  };
+
+  const handleNavigationWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (viewMode !== LightboxViewMode.Carousel || e.deltaY === 0) return;
+
+    const effectiveScrollMode = e.shiftKey
+      ? scrollMode === GQL.ImageLightboxScrollMode.Zoom
+        ? GQL.ImageLightboxScrollMode.PanY
+        : GQL.ImageLightboxScrollMode.Zoom
+      : scrollMode;
+    if (effectiveScrollMode !== GQL.ImageLightboxScrollMode.PanY) return;
+
+    if (e.deltaY < 0) {
+      handleLeft();
+    } else {
+      handleRight();
+    }
+    e.preventDefault();
+  };
+
   const firstScroll = useRef<number | null>(null);
-  const inScrollGroup = useRef(false);
 
   const debouncedScrollReset = useDebounce(() => {
     firstScroll.current = null;
-    inScrollGroup.current = false;
   }, SCROLL_ZOOM_TIMEOUT);
 
   useEffect(() => {
@@ -1273,15 +1321,11 @@ export const LightboxComponent: React.FC<IProps> = ({
                       scrollMode={scrollMode}
                       resetPosition={resetPosition}
                       zoom={i === currentIndex ? zoom : 1}
-                      scrollAttemptsBeforeChange={scrollAttemptsBeforeChange}
                       firstScroll={firstScroll}
-                      inScrollGroup={inScrollGroup}
                       current={i === currentIndex}
                       alignBottom={movingLeft}
                       setZoom={updateZoom}
                       debouncedScrollReset={debouncedScrollReset}
-                      onLeft={handleLeft}
-                      onRight={handleRight}
                       isVideo={isVideo(image.visual_files?.[0] ?? {})}
                     />
                   ) : undefined}
@@ -1432,8 +1476,9 @@ export const LightboxComponent: React.FC<IProps> = ({
       })}
       role="presentation"
       ref={containerRef}
-      onClick={handleClose}
-      onPointerDown={revealControls}
+      onClick={handleNavigationClick}
+      onWheel={handleNavigationWheel}
+      onPointerDown={handleNavigationPointerDown}
       onPointerMove={revealControls}
     >
       {renderBody()}

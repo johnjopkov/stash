@@ -1048,7 +1048,7 @@
       "scroll_mode": {
         "description": "Hold shift to temporarily use other mode.",
         "label": "Scroll mode",
-        "pan_y": "Pan Y",
+        "pan_y": "Navigate images",
         "zoom": "Zoom"
       },
       "view_mode": {
