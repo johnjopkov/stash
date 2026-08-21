@@ -87,9 +87,9 @@ const StreamImage: React.FC<RenderImageProps> = (props) => {
 };
 
 const breakpointWallHeights = [
-  { minWidth: 0, heights: [160, 220, 280, 360] },
-  { minWidth: 576, heights: [180, 260, 360, 480] },
-  { minWidth: 1200, heights: [220, 320, 440, 600] },
+  { minWidth: 0, heights: [160, 240, 360, 520] },
+  { minWidth: 576, heights: [180, 280, 480, 720] },
+  { minWidth: 1200, heights: [220, 360, 600, 900] },
 ];
 
 const SingleColumnImage: React.FC<{ photo: IStreamPhoto }> = ({ photo }) => (

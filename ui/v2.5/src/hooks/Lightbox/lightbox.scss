@@ -306,11 +306,16 @@
 
     &-single-item {
       align-items: center;
+      box-sizing: border-box;
       display: flex;
       flex: 0 0 auto;
       height: 100dvh;
       justify-content: center;
       width: 100%;
+
+      &:not(:last-child) {
+        border-bottom: 2px solid rgba(255, 255, 255, 0.25);
+      }
 
       img,
       video {
