@@ -40,3 +40,17 @@ export interface IChapter {
   title: string;
   image_index: number;
 }
+
+export enum LightboxViewMode {
+  Carousel = "carousel",
+  Stream = "stream",
+}
+
+export interface ILightboxPage {
+  images: ILightboxImage[];
+  page: number;
+  pages: number;
+  totalCount: number;
+}
+
+export type LightboxStreamLoader = (page: number) => Promise<ILightboxPage>;

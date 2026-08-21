@@ -3,6 +3,7 @@ import isEqual from "lodash-es/isEqual";
 import React, { Dispatch, SetStateAction, useEffect } from "react";
 import { View } from "src/components/List/views";
 import { ConfigImageLightboxInput } from "src/core/generated-graphql";
+import { LightboxViewMode } from "./Lightbox/types";
 
 interface IInterfaceQueryConfig {
   filter: string;
@@ -19,6 +20,7 @@ type IQueryConfig = Record<string, IInterfaceQueryConfig>;
 interface IInterfaceConfig {
   queryConfig: IQueryConfig;
   imageLightbox: ConfigImageLightboxInput;
+  imageLightboxViewMode?: LightboxViewMode;
   // Partial is required because using View makes the key mandatory
   viewConfig: Partial<Record<View, IViewConfig>>;
 }

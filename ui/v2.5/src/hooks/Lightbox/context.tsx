@@ -6,7 +6,7 @@ import React, {
   useState,
 } from "react";
 import { lazyComponent } from "src/utils/lazyComponent";
-import { ILightboxImage, IChapter } from "./types";
+import { ILightboxImage, IChapter, LightboxStreamLoader } from "./types";
 
 const LightboxComponent = lazyComponent(() => import("./Lightbox"));
 const LIGHTBOX_HISTORY_KEY = "stashLightbox";
@@ -25,6 +25,7 @@ export interface IState {
   pages?: number;
   pageSize?: number;
   totalCount?: number;
+  streamLoader?: LightboxStreamLoader;
   slideshowEnabled: boolean;
   slideshowAutostart?: boolean;
   onClose?: () => void;

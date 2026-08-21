@@ -68,6 +68,7 @@ import { SidebarAgeFilter } from "../List/Filters/SidebarAgeFilter";
 import { PerformerAgeCriterionOption } from "src/models/list-filter/images";
 import { SidebarFolderFilter } from "../List/Filters/FolderFilter";
 import { imageThumbnailSrcSet } from "src/utils/imageSources";
+import { ILightboxPage } from "src/hooks/Lightbox/types";
 
 interface IImageWallProps {
   images: GQL.SlimImageDataFragment[];
@@ -268,6 +269,23 @@ const ImageList: React.FC<IImageListImages> = PatchComponent(
       setSlideshowRunning(false);
     }, [setSlideshowRunning]);
 
+    const streamLoader = useCallback(
+      async (page: number): Promise<ILightboxPage> => {
+        const filterCopy = cloneDeep(filter);
+        filterCopy.currentPage = page;
+        const response = await queryFindImages(filterCopy);
+        const responseTotal = response.data.findImages.count;
+
+        return {
+          images: response.data.findImages.images,
+          page,
+          pages: Math.ceil(responseTotal / filterCopy.itemsPerPage),
+          totalCount: responseTotal,
+        };
+      },
+      [filter]
+    );
+
     const lightboxState = useMemo(() => {
       return {
         images,
@@ -277,6 +295,7 @@ const ImageList: React.FC<IImageListImages> = PatchComponent(
         pages: pageCount,
         pageSize: filter.itemsPerPage,
         totalCount,
+        streamLoader,
         slideshowEnabled: slideshowRunning,
         onClose: handleClose,
       };
@@ -287,6 +306,7 @@ const ImageList: React.FC<IImageListImages> = PatchComponent(
       filter.currentPage,
       filter.itemsPerPage,
       slideshowRunning,
+      streamLoader,
       handleClose,
       handleLightBoxPage,
     ]);

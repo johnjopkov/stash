@@ -1050,6 +1050,11 @@
         "label": "Scroll mode",
         "pan_y": "Pan Y",
         "zoom": "Zoom"
+      },
+      "view_mode": {
+        "carousel": "Single image",
+        "label": "Layout",
+        "stream": "Continuous stream"
       }
     },
     "merge": {
