@@ -19,6 +19,11 @@ import usePageVisibility from "../PageVisibility";
 import { useToast } from "../Toast";
 import { FormattedMessage, useIntl } from "react-intl";
 import { LightboxImage } from "./LightboxImage";
+import {
+  getClampedEdgeSize,
+  isContinuousWheelEvent,
+  shouldNavigateWheelEvent,
+} from "./LightboxInput";
 import { useConfigurationContext } from "../Config";
 import { Link } from "react-router-dom";
 import { OCounterButton } from "src/components/Scenes/SceneDetails/OCounterButton";
@@ -81,13 +86,22 @@ const CLASSNAME_CONTROLS_HIDDEN = `${CLASSNAME}-controls-hidden`;
 
 const DEFAULT_SLIDESHOW_DELAY = 5000;
 const CONTROLS_HIDE_DELAY = 2500;
-const CONTROLS_MOUSE_EDGE_RATIO = 0.05;
+const CONTROLS_EDGE_RATIO = 0.05;
+const CONTROLS_MOUSE_EDGE_MIN_PX = 24;
+const CONTROLS_MOUSE_EDGE_MAX_PX = 96;
 const CONTROLS_TOUCH_EDGE_MIN_PX = 44;
+const CONTROLS_TOUCH_EDGE_MAX_PX = 96;
 const SECONDS_TO_MS = 1000;
 const MIN_VALID_INTERVAL_SECONDS = 1;
 const MIN_ZOOM = 0.1;
 const SCROLL_ZOOM_TIMEOUT = 250;
 const ZOOM_NONE_EPSILON = 0.015;
+const MAX_CLICK_MOVEMENT = 5;
+const NAVIGATION_CLICK_EXCLUSION =
+  "[data-lightbox-interactive], button, a, input, select, textarea, label, [role='button'], .popover, .modal";
+const IMAGE_CONTENT_SELECTOR = `.${CLASSNAME_IMAGE}-wrapper`;
+const FOCUSABLE_SELECTOR =
+  "a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])";
 
 interface IProps {
   images: ILightboxImage[];
@@ -154,7 +168,13 @@ export const LightboxComponent: React.FC<IProps> = ({
   const [deleteTarget, setDeleteTarget] = useState<ILightboxImage | null>(null);
   const lastDKeyTime = useRef<number>(0);
   const [navOffset, setNavOffset] = useState<React.CSSProperties | undefined>();
-  const controlRevealPointerDown = useRef(false);
+  const navigationPointerDown = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+    moved: boolean;
+    cancelled: boolean;
+  }>();
 
   // An in-flight page switch's intended landing, set synchronously by
   // startPageSwitch *before* pageCallback. The landing is an explicit target —
@@ -525,16 +545,6 @@ export const LightboxComponent: React.FC<IProps> = ({
     [hide]
   );
 
-  const handleClose = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (controlRevealPointerDown.current) {
-      controlRevealPointerDown.current = false;
-      return;
-    }
-
-    const { className } = e.target as Element;
-    if (className?.includes?.(CLASSNAME_IMAGE)) close();
-  };
-
   const handleLeft = useCallback(
     (isUserAction = true) => {
       if (isSwitchingPageRef.current) return;
@@ -587,35 +597,79 @@ export const LightboxComponent: React.FC<IProps> = ({
     [images, pageCallback, index, disableAnimation, setInstant, startPageSwitch]
   );
 
-  const handleControlsPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    controlRevealPointerDown.current = false;
-    if (e.pointerType === "mouse") return;
-
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    const edgeHeight = Math.max(
-      rect.height * CONTROLS_MOUSE_EDGE_RATIO,
-      CONTROLS_TOUCH_EDGE_MIN_PX
-    );
-    const inTouchRevealZone =
-      e.clientY <= rect.top + edgeHeight ||
-      e.clientY >= rect.bottom - edgeHeight;
-
-    if (inTouchRevealZone) {
-      controlRevealPointerDown.current = true;
-      revealControls();
+  const handleNavigationPointerDown = (
+    e: React.PointerEvent<HTMLDivElement>
+  ) => {
+    if (!e.isPrimary) {
+      if (navigationPointerDown.current) {
+        navigationPointerDown.current.cancelled = true;
+      }
+      return;
     }
+
+    if (e.pointerType === "touch") {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const edgeHeight = getClampedEdgeSize(
+          rect.height,
+          CONTROLS_EDGE_RATIO,
+          CONTROLS_TOUCH_EDGE_MIN_PX,
+          CONTROLS_TOUCH_EDGE_MAX_PX
+        );
+        const inTouchRevealZone =
+          e.clientY <= rect.top + edgeHeight ||
+          e.clientY >= rect.bottom - edgeHeight;
+
+        if (inTouchRevealZone) {
+          navigationPointerDown.current = undefined;
+          revealControls();
+          return;
+        }
+      }
+    }
+
+    navigationPointerDown.current =
+      e.button === 0
+        ? {
+            pointerId: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            moved: false,
+            cancelled: false,
+          }
+        : undefined;
   };
 
   const handleControlsPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.pointerType !== "mouse" || e.buttons !== 0) return;
+    const start = navigationPointerDown.current;
+    if (start?.pointerId === e.pointerId && !start.moved) {
+      start.moved =
+        Math.hypot(e.clientX - start.x, e.clientY - start.y) >
+        MAX_CLICK_MOVEMENT;
+    }
+
+    if (
+      (e.pointerType !== "mouse" && e.pointerType !== "pen") ||
+      e.buttons !== 0
+    ) {
+      return;
+    }
 
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
 
-    const edgeX = rect.width * CONTROLS_MOUSE_EDGE_RATIO;
-    const edgeY = rect.height * CONTROLS_MOUSE_EDGE_RATIO;
+    const edgeX = getClampedEdgeSize(
+      rect.width,
+      CONTROLS_EDGE_RATIO,
+      CONTROLS_MOUSE_EDGE_MIN_PX,
+      CONTROLS_MOUSE_EDGE_MAX_PX
+    );
+    const edgeY = getClampedEdgeSize(
+      rect.height,
+      CONTROLS_EDGE_RATIO,
+      CONTROLS_MOUSE_EDGE_MIN_PX,
+      CONTROLS_MOUSE_EDGE_MAX_PX
+    );
     const inRevealZone =
       e.clientX <= rect.left + edgeX ||
       e.clientX >= rect.right - edgeX ||
@@ -624,6 +678,96 @@ export const LightboxComponent: React.FC<IProps> = ({
 
     if (inRevealZone) revealControls();
   };
+
+  const handleNavigationPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const start = navigationPointerDown.current;
+    navigationPointerDown.current = undefined;
+
+    if (
+      e.button !== 0 ||
+      !e.isPrimary ||
+      !start ||
+      start.pointerId !== e.pointerId ||
+      start.moved ||
+      start.cancelled ||
+      deleteTarget !== null
+    ) {
+      return;
+    }
+
+    const target = e.target as Element;
+    if (target.closest(NAVIGATION_CLICK_EXCLUSION)) return;
+
+    if (!allowNavigation) {
+      if (!target.closest(IMAGE_CONTENT_SELECTOR)) close();
+      return;
+    }
+
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    if (e.clientX < rect.left + rect.width / 2) {
+      handleLeft();
+    } else {
+      handleRight();
+    }
+  };
+
+  const handleNavigationPointerCancel = (
+    e: React.PointerEvent<HTMLDivElement>
+  ) => {
+    if (navigationPointerDown.current?.pointerId === e.pointerId) {
+      navigationPointerDown.current = undefined;
+    }
+  };
+
+  const handleNavigationWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (
+      !allowNavigation ||
+      e.defaultPrevented ||
+      e.deltaY === 0 ||
+      Math.abs(e.deltaY) <= Math.abs(e.deltaX) ||
+      showOptions ||
+      showChapters ||
+      deleteTarget !== null
+    ) {
+      return;
+    }
+
+    const target = e.target as Element;
+    if (target.closest(NAVIGATION_CLICK_EXCLUSION)) return;
+
+    const effectiveScrollMode = e.shiftKey
+      ? scrollMode === GQL.ImageLightboxScrollMode.Zoom
+        ? GQL.ImageLightboxScrollMode.Navigate
+        : GQL.ImageLightboxScrollMode.Zoom
+      : scrollMode;
+    if (effectiveScrollMode !== GQL.ImageLightboxScrollMode.Navigate) return;
+
+    const firstDeltaY = firstScroll.current;
+    const continuous = isContinuousWheelEvent(
+      e.deltaY,
+      e.deltaMode,
+      firstDeltaY
+    );
+    const shouldNavigate = shouldNavigateWheelEvent(
+      continuous,
+      inScrollGroup.current,
+      e.deltaY
+    );
+
+    if (shouldNavigate) {
+      if (e.deltaY < 0) {
+        handleLeft();
+      } else {
+        handleRight();
+      }
+    }
+
+    if (continuous && shouldNavigate) inScrollGroup.current = true;
+    if (firstDeltaY === null) firstScroll.current = e.deltaY;
+    debouncedScrollReset();
+  };
+
   const firstScroll = useRef<number | null>(null);
   const inScrollGroup = useRef(false);
 
@@ -641,7 +785,32 @@ export const LightboxComponent: React.FC<IProps> = ({
 
   const handleKey = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === "Tab") revealControls();
+      if (e.key === "Tab") {
+        revealControls();
+
+        const container = containerRef.current;
+        const focusable = container
+          ? Array.from(
+              container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+            ).filter((element) => element.getClientRects().length > 0)
+          : [];
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        const active = document.activeElement;
+
+        if (first && last) {
+          if (!container?.contains(active)) {
+            e.preventDefault();
+            (e.shiftKey ? last : first).focus();
+          } else if (e.shiftKey && active === first) {
+            e.preventDefault();
+            last.focus();
+          } else if (!e.shiftKey && active === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
       if (e.repeat && (e.key === "ArrowRight" || e.key === "ArrowLeft"))
         setInstant();
       if (e.key === "ArrowLeft") handleLeft();
@@ -757,6 +926,18 @@ export const LightboxComponent: React.FC<IProps> = ({
   };
 
   const currentIndex = index === null ? initialIndex : index;
+
+  const controlsEngagementProps = {
+    "data-lightbox-interactive": true,
+    onPointerEnter: () => setControlsEngaged(true),
+    onPointerLeave: () => setControlsEngaged(false),
+    onFocusCapture: () => setControlsEngaged(true),
+    onBlurCapture: (e: React.FocusEvent<HTMLElement>) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+        setControlsEngaged(false);
+      }
+    },
+  };
 
   useEffect(() => {
     // Don't auto-close while images are still loading. Some entry points open
@@ -961,6 +1142,14 @@ export const LightboxComponent: React.FC<IProps> = ({
                     id: "dialogs.lightbox.scroll_mode.pan_y",
                   })}
                 </option>
+                <option
+                  value={GQL.ImageLightboxScrollMode.Navigate}
+                  key={GQL.ImageLightboxScrollMode.Navigate}
+                >
+                  {intl.formatMessage({
+                    id: "dialogs.lightbox.scroll_mode.navigate",
+                  })}
+                </option>
               </Form.Control>
             </Col>
           </Form.Group>
@@ -1030,13 +1219,7 @@ export const LightboxComponent: React.FC<IProps> = ({
 
     return (
       <>
-        <div
-          className={CLASSNAME_HEADER}
-          onMouseEnter={() => setControlsEngaged(true)}
-          onMouseLeave={() => setControlsEngaged(false)}
-          onFocusCapture={() => setControlsEngaged(true)}
-          onBlurCapture={() => setControlsEngaged(false)}
-        >
+        <div className={CLASSNAME_HEADER} {...controlsEngagementProps}>
           <div className={CLASSNAME_LEFT_SPACER}>{renderChapterMenu()}</div>
           <div className={CLASSNAME_INDICATOR}>
             <span>{chapterHeader()}</span>
@@ -1130,10 +1313,7 @@ export const LightboxComponent: React.FC<IProps> = ({
               variant="link"
               onClick={() => handleLeft()}
               className={`${CLASSNAME_NAVBUTTON} d-none d-lg-block`}
-              onMouseEnter={() => setControlsEngaged(true)}
-              onMouseLeave={() => setControlsEngaged(false)}
-              onFocus={() => setControlsEngaged(true)}
-              onBlur={() => setControlsEngaged(false)}
+              {...controlsEngagementProps}
             >
               <Icon icon={faChevronLeft} />
             </Button>
@@ -1179,10 +1359,7 @@ export const LightboxComponent: React.FC<IProps> = ({
               variant="link"
               onClick={() => handleRight()}
               className={`${CLASSNAME_NAVBUTTON} d-none d-lg-block`}
-              onMouseEnter={() => setControlsEngaged(true)}
-              onMouseLeave={() => setControlsEngaged(false)}
-              onFocus={() => setControlsEngaged(true)}
-              onBlur={() => setControlsEngaged(false)}
+              {...controlsEngagementProps}
             >
               <Icon icon={faChevronRight} />
             </Button>
@@ -1193,10 +1370,7 @@ export const LightboxComponent: React.FC<IProps> = ({
             className={CLASSNAME_NAV}
             style={navOffset}
             ref={navRef}
-            onMouseEnter={() => setControlsEngaged(true)}
-            onMouseLeave={() => setControlsEngaged(false)}
-            onFocusCapture={() => setControlsEngaged(true)}
-            onBlurCapture={() => setControlsEngaged(false)}
+            {...controlsEngagementProps}
           >
             <Button
               variant="link"
@@ -1215,13 +1389,7 @@ export const LightboxComponent: React.FC<IProps> = ({
             </Button>
           </div>
         )}
-        <div
-          className={CLASSNAME_FOOTER}
-          onMouseEnter={() => setControlsEngaged(true)}
-          onMouseLeave={() => setControlsEngaged(false)}
-          onFocusCapture={() => setControlsEngaged(true)}
-          onBlurCapture={() => setControlsEngaged(false)}
-        >
+        <div className={CLASSNAME_FOOTER} {...controlsEngagementProps}>
           <div className={CLASSNAME_FOOTER_LEFT}>
             {currentImage?.id !== undefined && (
               <>
@@ -1296,12 +1464,27 @@ export const LightboxComponent: React.FC<IProps> = ({
       className={cx(CLASSNAME, {
         [CLASSNAME_CONTROLS_HIDDEN]: !controlsVisible,
       })}
-      role="presentation"
+      role="dialog"
+      aria-modal="true"
+      aria-label={intl.formatMessage({ id: "dialogs.lightbox.viewer" })}
+      tabIndex={-1}
       ref={containerRef}
-      onClick={handleClose}
-      onPointerDown={handleControlsPointerDown}
+      onWheel={handleNavigationWheel}
+      onPointerDown={handleNavigationPointerDown}
       onPointerMove={handleControlsPointerMove}
+      onPointerUp={handleNavigationPointerUp}
+      onPointerCancel={handleNavigationPointerCancel}
     >
+      {!controlsVisible && (
+        <button
+          type="button"
+          className="sr-only"
+          data-lightbox-interactive
+          onClick={revealControls}
+        >
+          {intl.formatMessage({ id: "dialogs.lightbox.show_controls" })}
+        </button>
+      )}
       {renderBody()}
       {deleteTarget?.id !== undefined && (
         <DeleteImagesDialog

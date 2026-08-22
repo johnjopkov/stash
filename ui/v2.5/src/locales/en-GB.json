@@ -1046,11 +1046,14 @@
         "label": "Scale up to fit"
       },
       "scroll_mode": {
-        "description": "Hold shift to temporarily use other mode.",
+        "description": "Hold shift to temporarily zoom, or navigate when zoom mode is selected.",
         "label": "Scroll mode",
+        "navigate": "Navigate images",
         "pan_y": "Pan Y",
         "zoom": "Zoom"
-      }
+      },
+      "show_controls": "Show viewer controls",
+      "viewer": "Image viewer"
     },
     "merge": {
       "combined": "Combined",

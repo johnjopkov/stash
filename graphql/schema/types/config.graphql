@@ -364,6 +364,7 @@ enum ImageLightboxDisplayMode {
 enum ImageLightboxScrollMode {
   ZOOM
   PAN_Y
+  NAVIGATE
 }
 
 input ConfigImageLightboxInput {
