@@ -217,14 +217,15 @@ export const LightboxComponent: React.FC<IProps> = ({
   const [zoom, setZoom] = useState(1);
 
   function updateZoom(v: number) {
+    let appliedZoom = v;
     if (v < MIN_ZOOM) {
-      setZoom(MIN_ZOOM);
+      appliedZoom = MIN_ZOOM;
     } else if (Math.abs(v - 1) < ZOOM_NONE_EPSILON) {
       // "snap to 1" effect: if new zoom is close to 1, set to 1
-      setZoom(1);
-    } else {
-      setZoom(v);
+      appliedZoom = 1;
     }
+    setZoom(appliedZoom);
+    return appliedZoom;
   }
 
   const [resetPosition, setResetPosition] = useState(false);
