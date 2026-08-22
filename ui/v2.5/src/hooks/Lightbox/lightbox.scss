@@ -1,4 +1,7 @@
 .Lightbox {
+  --lightbox-footer-height: 4.5rem;
+  --lightbox-header-height: 4rem;
+
   background-color: rgba(20, 20, 20, 0.8);
   bottom: 0;
   display: flex;
@@ -11,9 +14,20 @@
 
   &-header {
     align-items: center;
+    background: linear-gradient(rgba(0, 0, 0, 0.8), transparent);
     display: flex;
-    flex-shrink: 0;
-    height: 4rem;
+    height: calc(
+      var(--lightbox-header-height) + env(safe-area-inset-top)
+    );
+    left: 0;
+    padding-top: env(safe-area-inset-top);
+    position: absolute;
+    right: 0;
+    top: 0;
+    transition:
+      opacity 250ms ease,
+      visibility 0s linear;
+    z-index: 1046;
 
     .fa-icon {
       path {
@@ -75,9 +89,20 @@
 
   &-footer {
     align-items: center;
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+    bottom: 0;
     display: flex;
-    flex-shrink: 0;
-    height: 4.5rem;
+    height: calc(
+      var(--lightbox-footer-height) + env(safe-area-inset-bottom)
+    );
+    left: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+    position: absolute;
+    right: 0;
+    transition:
+      opacity 250ms ease,
+      visibility 0s linear;
+    z-index: 1046;
 
     & > div {
       flex: 1;
@@ -134,9 +159,11 @@
 
   &-display {
     display: flex;
-    height: 100%;
+    flex: 1;
     justify-content: space-between;
+    min-height: 0;
     position: relative;
+    width: 100%;
   }
 
   &-carousel {
@@ -170,6 +197,9 @@
   }
 
   &-navbutton {
+    transition:
+      opacity 250ms ease,
+      visibility 0s linear;
     z-index: 1045;
 
     .fa-icon {
@@ -196,14 +226,20 @@
   }
 
   &-nav {
+    bottom: calc(
+      var(--lightbox-footer-height) + 1rem + env(safe-area-inset-bottom)
+    );
     display: flex;
     flex-direction: row;
-    flex-shrink: 0;
     height: 10rem;
-    margin: 0 auto 2rem 0;
+    margin: 0;
     padding: 0 10rem;
-    position: relative;
-    transition: left 400ms;
+    position: absolute;
+    transition:
+      left 400ms,
+      opacity 250ms ease,
+      visibility 0s linear;
+    z-index: 1045;
 
     @media (max-height: 800px) {
       display: none;
@@ -217,6 +253,33 @@
       cursor: pointer;
       height: 100%;
       margin-right: 1rem;
+    }
+  }
+
+  &-controls-hidden {
+    .Lightbox-header,
+    .Lightbox-footer,
+    .Lightbox-nav,
+    .Lightbox-navbutton {
+      opacity: 0;
+      pointer-events: none;
+      transition:
+        opacity 250ms ease,
+        visibility 0s linear 250ms;
+      visibility: hidden;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &-header,
+    &-footer,
+    &-nav,
+    &-navbutton,
+    &-controls-hidden .Lightbox-header,
+    &-controls-hidden .Lightbox-footer,
+    &-controls-hidden .Lightbox-nav,
+    &-controls-hidden .Lightbox-navbutton {
+      transition-duration: 0ms;
     }
   }
 }
