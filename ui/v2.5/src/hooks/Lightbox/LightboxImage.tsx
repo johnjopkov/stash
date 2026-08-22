@@ -104,7 +104,6 @@ export const LightboxImage: React.FC<IProps> = ({
   const [boxHeight, setBoxHeight] = useState(0);
   const dimensionsProvided = width > 0 && height > 0;
 
-  const mouseDownEvent = useRef<MouseEvent>();
   const resetPositionRef = useRef(resetPosition);
 
   const container = React.createRef<HTMLDivElement>();
@@ -280,8 +279,9 @@ export const LightboxImage: React.FC<IProps> = ({
     if (ev.shiftKey) {
       switch (scrollMode) {
         case GQL.ImageLightboxScrollMode.Zoom:
-          return GQL.ImageLightboxScrollMode.PanY;
+          return GQL.ImageLightboxScrollMode.Navigate;
         case GQL.ImageLightboxScrollMode.PanY:
+        case GQL.ImageLightboxScrollMode.Navigate:
           return GQL.ImageLightboxScrollMode.Zoom;
       }
     }
@@ -380,6 +380,9 @@ export const LightboxImage: React.FC<IProps> = ({
   }
 
   function onImageScroll(ev: React.WheelEvent) {
+    const effectiveScrollMode = getScrollMode(ev);
+    if (effectiveScrollMode === GQL.ImageLightboxScrollMode.Navigate) return;
+
     const absDeltaY = Math.abs(ev.deltaY);
     const firstDeltaY = firstScroll.current;
     // detect infinite scrolling (mousepad, mouse with infinite scrollwheel)
@@ -390,7 +393,7 @@ export const LightboxImage: React.FC<IProps> = ({
       (firstDeltaY !== null &&
         Math.abs(firstDeltaY) < SCROLL_INFINITE_THRESHOLD);
 
-    switch (getScrollMode(ev)) {
+    switch (effectiveScrollMode) {
       case GQL.ImageLightboxScrollMode.Zoom: {
         let percent: number;
         if (infinite) {
@@ -436,34 +439,6 @@ export const LightboxImage: React.FC<IProps> = ({
   function onImageMouseDown(ev: React.MouseEvent) {
     startPoints.current = [ev.pageX, ev.pageY];
     setMoving(true);
-
-    mouseDownEvent.current = ev.nativeEvent;
-  }
-
-  function onImageMouseUp(ev: React.MouseEvent) {
-    if (ev.button !== 0) return;
-
-    if (
-      !mouseDownEvent.current ||
-      ev.timeStamp - mouseDownEvent.current.timeStamp > 200
-    ) {
-      // not a click - ignore
-      return;
-    }
-
-    // must be a click
-    if (
-      ev.pageX !== startPoints.current[0] ||
-      ev.pageY !== startPoints.current[1]
-    ) {
-      return;
-    }
-
-    if (ev.nativeEvent.offsetX >= (ev.target as HTMLElement).offsetWidth / 2) {
-      onRight();
-    } else {
-      onLeft();
-    }
   }
 
   function onTouchStart(ev: React.TouchEvent) {
@@ -569,7 +544,7 @@ export const LightboxImage: React.FC<IProps> = ({
             style={{ touchAction: "none" }}
             onWheel={current ? (e) => onImageScroll(e) : undefined}
             onMouseDown={onImageMouseDown}
-            onMouseUp={onImageMouseUp}
+            onMouseUp={() => setMoving(false)}
             onMouseMove={onImageMouseOver}
             onTouchStart={onTouchStart}
             onTouchMove={onTouchMove}
