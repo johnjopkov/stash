@@ -77,8 +77,12 @@ const CLASSNAME_NAVBUTTON = `${CLASSNAME}-navbutton`;
 const CLASSNAME_NAV = `${CLASSNAME}-nav`;
 const CLASSNAME_NAVIMAGE = `${CLASSNAME_NAV}-image`;
 const CLASSNAME_NAVSELECTED = `${CLASSNAME_NAV}-selected`;
+const CLASSNAME_CONTROLS_HIDDEN = `${CLASSNAME}-controls-hidden`;
 
 const DEFAULT_SLIDESHOW_DELAY = 5000;
+const CONTROLS_HIDE_DELAY = 2500;
+const CONTROLS_EDGE_RATIO = 0.05;
+const CONTROLS_TOUCH_EDGE_MIN_PX = 44;
 const SECONDS_TO_MS = 1000;
 const MIN_VALID_INTERVAL_SECONDS = 1;
 const MIN_ZOOM = 0.1;
@@ -140,6 +144,8 @@ export const LightboxComponent: React.FC<IProps> = ({
   const [isFullscreen, setFullscreen] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [showChapters, setShowChapters] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const [controlsEngaged, setControlsEngaged] = useState(false);
   const [imagesLoaded, setImagesLoaded] = useState(0);
   // The image the delete dialog acts on, captured when the dialog is opened.
   // Reading images[currentIndex] at confirm time instead would delete whatever
@@ -148,6 +154,7 @@ export const LightboxComponent: React.FC<IProps> = ({
   const [deleteTarget, setDeleteTarget] = useState<ILightboxImage | null>(null);
   const lastDKeyTime = useRef<number>(0);
   const [navOffset, setNavOffset] = useState<React.CSSProperties | undefined>();
+  const suppressBackdropClick = useRef(false);
 
   // An in-flight page switch's intended landing, set synchronously by
   // startPageSwitch *before* pageCallback. The landing is an explicit target —
@@ -209,6 +216,34 @@ export const LightboxComponent: React.FC<IProps> = ({
   const navRef = useRef<HTMLDivElement | null>(null);
   const clearIntervalCallback = useRef<() => void>();
   const resetIntervalCallback = useRef<() => void>();
+  const controlsPinned =
+    isLoading ||
+    isSwitchingPage ||
+    controlsEngaged ||
+    showOptions ||
+    showChapters ||
+    deleteTarget !== null;
+  const hideControls = useDebounce(() => {
+    if (!controlsPinned) setControlsVisible(false);
+  }, CONTROLS_HIDE_DELAY);
+
+  const revealControls = useCallback(() => {
+    setControlsVisible(true);
+    hideControls();
+  }, [hideControls]);
+
+  useEffect(() => {
+    if (controlsPinned) {
+      hideControls.cancel();
+      setControlsVisible(true);
+    } else {
+      hideControls();
+    }
+  }, [controlsPinned, hideControls]);
+
+  useEffect(() => {
+    return hideControls.cancel;
+  }, [hideControls]);
 
   const allowNavigation = images.length > 1 || pageCallback;
 
@@ -458,6 +493,11 @@ export const LightboxComponent: React.FC<IProps> = ({
   );
 
   const handleClose = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (suppressBackdropClick.current) {
+      suppressBackdropClick.current = false;
+      return;
+    }
+
     const { className } = e.target as Element;
     if (className?.includes?.(CLASSNAME_IMAGE)) close();
   };
@@ -514,6 +554,37 @@ export const LightboxComponent: React.FC<IProps> = ({
     [images, pageCallback, index, disableAnimation, setInstant, startPageSwitch]
   );
 
+  const handleControlsPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    suppressBackdropClick.current = false;
+    if (e.pointerType === "mouse") return;
+
+    const edgeHeight = Math.max(
+      e.currentTarget.clientHeight * CONTROLS_EDGE_RATIO,
+      CONTROLS_TOUCH_EDGE_MIN_PX
+    );
+    const inTouchRevealZone =
+      e.clientY <= edgeHeight ||
+      e.clientY >= e.currentTarget.clientHeight - edgeHeight;
+
+    if (inTouchRevealZone) {
+      suppressBackdropClick.current = true;
+      revealControls();
+    }
+  };
+
+  const handleControlsPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== "mouse" || e.buttons !== 0) return;
+
+    const edgeX = e.currentTarget.clientWidth * CONTROLS_EDGE_RATIO;
+    const edgeY = e.currentTarget.clientHeight * CONTROLS_EDGE_RATIO;
+    const inRevealZone =
+      e.clientX <= edgeX ||
+      e.clientX >= e.currentTarget.clientWidth - edgeX ||
+      e.clientY <= edgeY ||
+      e.clientY >= e.currentTarget.clientHeight - edgeY;
+
+    if (inRevealZone) revealControls();
+  };
   const firstScroll = useRef<number | null>(null);
   const inScrollGroup = useRef(false);
 
@@ -531,6 +602,7 @@ export const LightboxComponent: React.FC<IProps> = ({
 
   const handleKey = useCallback(
     (e: KeyboardEvent) => {
+      if (e.key === "Tab") revealControls();
       if (e.repeat && (e.key === "ArrowRight" || e.key === "ArrowLeft"))
         setInstant();
       if (e.key === "ArrowLeft") handleLeft();
@@ -549,7 +621,16 @@ export const LightboxComponent: React.FC<IProps> = ({
         }
       }
     },
-    [setInstant, handleLeft, handleRight, close, images, index, initialIndex]
+    [
+      setInstant,
+      handleLeft,
+      handleRight,
+      close,
+      images,
+      index,
+      initialIndex,
+      revealControls,
+    ]
   );
 
   const [clearCallback, resetCallback] = useInterval(
@@ -854,6 +935,18 @@ export const LightboxComponent: React.FC<IProps> = ({
     );
   }
 
+  const controlsEngagementProps = {
+    "data-lightbox-interactive": true,
+    onPointerEnter: () => setControlsEngaged(true),
+    onPointerLeave: () => setControlsEngaged(false),
+    onFocusCapture: () => setControlsEngaged(true),
+    onBlurCapture: (e: React.FocusEvent<HTMLElement>) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+        setControlsEngaged(false);
+      }
+    },
+  };
+
   function renderBody() {
     if (images.length === 0 || isLoading || isSwitchingPage) {
       return <LoadingIndicator />;
@@ -910,7 +1003,7 @@ export const LightboxComponent: React.FC<IProps> = ({
 
     return (
       <>
-        <div className={CLASSNAME_HEADER}>
+        <div className={CLASSNAME_HEADER} {...controlsEngagementProps}>
           <div className={CLASSNAME_LEFT_SPACER}>{renderChapterMenu()}</div>
           <div className={CLASSNAME_INDICATOR}>
             <span>{chapterHeader()}</span>
@@ -1004,6 +1097,7 @@ export const LightboxComponent: React.FC<IProps> = ({
               variant="link"
               onClick={() => handleLeft()}
               className={`${CLASSNAME_NAVBUTTON} d-none d-lg-block`}
+              {...controlsEngagementProps}
             >
               <Icon icon={faChevronLeft} />
             </Button>
@@ -1049,13 +1143,19 @@ export const LightboxComponent: React.FC<IProps> = ({
               variant="link"
               onClick={() => handleRight()}
               className={`${CLASSNAME_NAVBUTTON} d-none d-lg-block`}
+              {...controlsEngagementProps}
             >
               <Icon icon={faChevronRight} />
             </Button>
           )}
         </div>
         {showNavigation && !isFullscreen && images.length > 1 && (
-          <div className={CLASSNAME_NAV} style={navOffset} ref={navRef}>
+          <div
+            className={CLASSNAME_NAV}
+            style={navOffset}
+            ref={navRef}
+            {...controlsEngagementProps}
+          >
             <Button
               variant="link"
               onClick={() => setIndex(images.length - 1)}
@@ -1073,7 +1173,7 @@ export const LightboxComponent: React.FC<IProps> = ({
             </Button>
           </div>
         )}
-        <div className={CLASSNAME_FOOTER}>
+        <div className={CLASSNAME_FOOTER} {...controlsEngagementProps}>
           <div className={CLASSNAME_FOOTER_LEFT}>
             {currentImage?.id !== undefined && (
               <>
@@ -1145,10 +1245,14 @@ export const LightboxComponent: React.FC<IProps> = ({
 
   return (
     <div
-      className={CLASSNAME}
+      className={cx(CLASSNAME, {
+        [CLASSNAME_CONTROLS_HIDDEN]: !controlsVisible,
+      })}
       role="presentation"
       ref={containerRef}
       onClick={handleClose}
+      onPointerDown={handleControlsPointerDown}
+      onPointerMove={handleControlsPointerMove}
     >
       {renderBody()}
       {deleteTarget?.id !== undefined && (
