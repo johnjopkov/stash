@@ -4,24 +4,26 @@ Images are the parts which make up galleries, but you can also have them be scan
 
 1. Group them in a folder together and activate the **Create galleries from folders containing images** option in the library section of your settings. The gallery will get the name of the folder.
 2. Group them in a folder together and create a file in the folder called .forcegallery. The gallery will get the name of the folder.
-3. Group them into a zip archive together. The gallery will get the name of the archive.
+3. Group them into a ZIP, CBZ, RAR, or CBR archive together. The gallery will get the name of the archive.
 4. You can simply create a gallery in stash itself by clicking on **New** in the Galleries tab. 
 
 You can add images to every gallery manually in the gallery detail page. Deleting can be done by selecting the according images in the same view and clicking on the minus next to the edit button.
 
-For best results, images in zip file should be stored without compression (copy, store or no compression options depending on the software you use. Eg on linux: `zip -0 -r gallery.zip foldertozip/`). This impacts **heavily** on the zip read performance.
+For best results with ZIP and CBZ galleries, images should be stored without compression (copy, store or no compression options depending on the software you use. Eg on linux: `zip -0 -r gallery.zip foldertozip/`). This impacts **heavily** on archive read performance.
 
-> **⚠️ Note:** AVIF files in ZIP archives are currently unsupported.
+RAR and CBR galleries are read directly by Stash and do not require `unrar` or other external software. Solid archives are supported, but may scan more slowly because reading an entry requires processing the entries that precede it.
 
-> **ℹ️ Note:** JPEG XL (`.jxl`) is supported, including inside ZIP archives, and requires an FFmpeg built with `libjxl` (or [libvips](https://www.libvips.org/)). Perceptual hashes are not generated for JXL inside ZIP archives.
+> **⚠️ Note:** AVIF files in gallery archives are currently unsupported.
 
-If a filename of an image in the gallery zip file ends with `cover.jpg`, it will be treated like a cover and presented first in the gallery view page and as a gallery cover in the gallery list view. If more than one images match the name the first one found in natural sort order is selected.
+> **ℹ️ Note:** JPEG XL (`.jxl`) is supported, including inside gallery archives, and requires an FFmpeg built with `libjxl` (or [libvips](https://www.libvips.org/)). Perceptual hashes are not generated for JXL inside gallery archives.
+
+If a filename of an image in the gallery archive ends with `cover.jpg`, it will be treated like a cover and presented first in the gallery view page and as a gallery cover in the gallery list view. If more than one images match the name the first one found in natural sort order is selected.
 
 You can also manually select any image from a gallery as its cover. On the gallery details page, select the desired cover image, and then select **Set as Cover** in the ⋯ menu.
 
 ## Image clips/gifs
 
-Images can also be clips/gifs. These are meant to be short video loops. Right now they are not possible in zipfiles. To declare video files to be images, there are two ways:
+Images can also be clips/gifs. These are meant to be short video loops. Right now they are not possible in gallery archives. To declare video files to be images, there are two ways:
 
 1. Deactivate video scanning for all libraries that contain clips/gifs, but keep image scanning active. Set the **Scan video extensions as image clips** option in the library section of your settings. 
 2. Make sure none of the file endings used by your clips/gifs are present in the **Video extensions** and add them to the **Image extensions** in the library section of your settings.

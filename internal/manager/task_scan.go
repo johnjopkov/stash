@@ -386,9 +386,9 @@ func (j *ScanJob) handleFile(ctx context.Context, f file.ScannedFile, progress *
 		}
 	}
 
-	// handle rename should have already handled the contents of the zip file
+	// handle rename should have already handled the contents of the archive
 	// so shouldn't need to scan it again.
-	// Only scan zip contents if the file is new, the fingerprint changed,
+	// Only scan archive contents if the file is new, the fingerprint changed,
 	// if a force rescan was requested, or if the handler was required because
 	// a related object (e.g. a deleted gallery) is missing and needs to be
 	// recreated from the contents.
@@ -397,37 +397,37 @@ func (j *ScanJob) handleFile(ctx context.Context, f file.ScannedFile, progress *
 		ff := r.File
 		f.BaseFile = ff.Base()
 
-		// scan zip files with a different context that is not cancellable
-		// cancelling while scanning zip file contents results in the scan
+		// scan gallery archives with a different context that is not cancellable
+		// cancelling while scanning archive contents results in the scan
 		// contents being partially completed
-		zipCtx := context.WithoutCancel(ctx)
+		archiveCtx := context.WithoutCancel(ctx)
 
-		if err := j.scanZipFile(zipCtx, f, progress); err != nil {
-			logger.Errorf("Error scanning zip file %q: %v", f.Path, err)
+		if err := j.scanArchiveFile(archiveCtx, f, progress); err != nil {
+			logger.Errorf("Error scanning gallery archive %q: %v", f.Path, err)
 		}
 	} else if r.Updated && j.scanner.IsZipFile(f.Info.Name()) {
-		logger.Debugf("Skipping zip file scan for %q: fingerprint unchanged", f.Path)
+		logger.Debugf("Skipping gallery archive scan for %q: fingerprint unchanged", f.Path)
 	}
 
 	return nil
 }
 
-func (j *ScanJob) scanZipFile(ctx context.Context, f file.ScannedFile, progress *job.Progress) error {
-	zipFS, err := f.FS.OpenZip(f.Path, f.Size)
+func (j *ScanJob) scanArchiveFile(ctx context.Context, f file.ScannedFile, progress *job.Progress) error {
+	archiveFS, err := f.FS.OpenZip(f.Path, f.Size)
 	if err != nil {
 		if errors.Is(err, file.ErrNotReaderAt) {
-			// can't walk the zip file
+			// can't walk the archive
 			// just return
-			logger.Debugf("Skipping zip file %q as it cannot be opened for walking", f.Path)
+			logger.Debugf("Skipping gallery archive %q as it cannot be opened for walking", f.Path)
 			return nil
 		}
 
 		return err
 	}
 
-	defer zipFS.Close()
+	defer archiveFS.Close()
 
-	return file.SymWalk(zipFS, f.Path, j.queueFileFunc(ctx, zipFS, &f, progress))
+	return file.SymWalk(archiveFS, f.Path, j.queueFileFunc(ctx, archiveFS, &f, progress))
 }
 
 type extensionConfig struct {
