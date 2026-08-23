@@ -18,8 +18,8 @@ import (
 )
 
 var (
-	ErrNotReaderAt  = errors.New("invalid reader: does not implement io.ReaderAt")
-	errZipFSOpenZip = errors.New("cannot open zip file inside zip file")
+	ErrNotReaderAt          = errors.New("invalid reader: does not implement io.ReaderAt")
+	errArchiveFSOpenArchive = errors.New("cannot open archive inside archive")
 )
 
 // ZipFS is a file system backed by a zip file.
@@ -126,18 +126,18 @@ func (f *zipFS) Lstat(name string) (fs.FileInfo, error) {
 }
 
 func (f *zipFS) OpenZip(name string, size int64) (models.ZipFS, error) {
-	return nil, errZipFSOpenZip
+	return nil, errArchiveFSOpenArchive
 }
 
 func (f *zipFS) IsPathCaseSensitive(path string) (bool, error) {
 	return true, nil
 }
 
-type zipReadDirFile struct {
+type archiveReadDirFile struct {
 	fs.File
 }
 
-func (f *zipReadDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
+func (f *archiveReadDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
 	asReadDirFile, _ := f.File.(fs.ReadDirFile)
 	if asReadDirFile == nil {
 		return nil, fmt.Errorf("internal error: not a ReadDirFile")
@@ -157,7 +157,7 @@ func (f *zipFS) Open(name string) (fs.ReadDirFile, error) {
 		return nil, err
 	}
 
-	return &zipReadDirFile{
+	return &archiveReadDirFile{
 		File: r,
 	}, nil
 }

@@ -4,6 +4,8 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/stashapp/stash/pkg/fsutil"
 	"github.com/stashapp/stash/pkg/models"
@@ -59,6 +61,11 @@ func (f *OsFS) Open(name string) (fs.ReadDirFile, error) {
 }
 
 func (f *OsFS) OpenZip(name string, size int64) (models.ZipFS, error) {
+	ext := strings.TrimPrefix(filepath.Ext(name), ".")
+	if strings.EqualFold(ext, "rar") || strings.EqualFold(ext, "cbr") {
+		return newRarFS(f, name)
+	}
+
 	return newZipFS(f, name, size)
 }
 
