@@ -2,8 +2,10 @@ package manager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -51,7 +53,7 @@ func (j *cleanJob) Execute(ctx context.Context, progress *job.Progress) error {
 		return nil
 	}
 
-	j.cleanEmptyGalleries(ctx)
+	j.cleanGalleries(ctx)
 
 	j.scanSubs.notify()
 	elapsed := time.Since(start)
@@ -59,46 +61,10 @@ func (j *cleanJob) Execute(ctx context.Context, progress *job.Progress) error {
 	return nil
 }
 
-func (j *cleanJob) cleanEmptyGalleries(ctx context.Context) {
-	const batchSize = 1000
-	var toClean []int
-	findFilter := models.BatchFindFilter(batchSize)
-	r := j.repository
-	if err := r.WithTxn(ctx, func(ctx context.Context) error {
-		found := true
-		for found {
-			emptyGalleries, _, err := r.Gallery.Query(ctx, &models.GalleryFilterType{
-				ImageCount: &models.IntCriterionInput{
-					Value:    0,
-					Modifier: models.CriterionModifierEquals,
-				},
-			}, findFilter)
-
-			if err != nil {
-				return err
-			}
-
-			found = len(emptyGalleries) > 0
-
-			for _, g := range emptyGalleries {
-				if g.Path == "" {
-					continue
-				}
-
-				if len(j.input.Paths) > 0 && !fsutil.IsPathInDirs(j.input.Paths, g.Path) {
-					continue
-				}
-
-				logger.Infof("Gallery has 0 images. Marking to clean: %s", g.DisplayName())
-				toClean = append(toClean, g.ID)
-			}
-
-			*findFilter.Page++
-		}
-
-		return nil
-	}); err != nil {
-		logger.Errorf("Error finding empty galleries: %v", err)
+func (j *cleanJob) cleanGalleries(ctx context.Context) {
+	toClean, err := j.findGalleriesToClean(ctx)
+	if err != nil {
+		logger.Errorf("Error finding galleries to clean: %v", err)
 		return
 	}
 
@@ -107,6 +73,106 @@ func (j *cleanJob) cleanEmptyGalleries(ctx context.Context) {
 			j.deleteGallery(ctx, id)
 		}
 	}
+}
+
+func isNoGalleryFolder(path string) (bool, error) {
+	if _, err := os.Stat(filepath.Join(path, ".forcegallery")); err == nil {
+		return false, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+
+	if _, err := os.Stat(filepath.Join(path, ".nogallery")); err == nil {
+		return true, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+
+	return false, nil
+}
+
+func (j *cleanJob) findGalleriesToClean(ctx context.Context) ([]int, error) {
+	const batchSize = 1000
+	var toClean []int
+	var folderGalleries []*models.Gallery
+	toCleanSet := make(map[int]struct{})
+	r := j.repository
+
+	inCleanPaths := func(g *models.Gallery) bool {
+		return g.Path != "" && (len(j.input.Paths) == 0 || fsutil.IsPathInDirs(j.input.Paths, g.Path))
+	}
+
+	markForClean := func(g *models.Gallery, reason string) {
+		if _, exists := toCleanSet[g.ID]; exists {
+			return
+		}
+
+		logger.Infof("%s. Marking to clean: %s", reason, g.DisplayName())
+		toCleanSet[g.ID] = struct{}{}
+		toClean = append(toClean, g.ID)
+	}
+
+	queryInBatches := func(ctx context.Context, galleryFilter *models.GalleryFilterType, visit func(*models.Gallery)) error {
+		findFilter := models.BatchFindFilter(batchSize)
+		found := true
+		for found {
+			galleries, _, err := r.Gallery.Query(ctx, galleryFilter, findFilter)
+			if err != nil {
+				return err
+			}
+
+			found = len(galleries) > 0
+			for _, g := range galleries {
+				visit(g)
+			}
+
+			*findFilter.Page++
+		}
+
+		return nil
+	}
+
+	err := r.WithTxn(ctx, func(ctx context.Context) error {
+		emptyGalleryFilter := &models.GalleryFilterType{
+			ImageCount: &models.IntCriterionInput{
+				Value:    0,
+				Modifier: models.CriterionModifierEquals,
+			},
+		}
+		if err := queryInBatches(ctx, emptyGalleryFilter, func(g *models.Gallery) {
+			if inCleanPaths(g) {
+				markForClean(g, "Gallery has 0 images")
+			}
+		}); err != nil {
+			return err
+		}
+
+		return queryInBatches(ctx, nil, func(g *models.Gallery) {
+			// .nogallery only applies to galleries created from folders.
+			if g.FolderID != nil && inCleanPaths(g) {
+				folderGalleries = append(folderGalleries, g)
+			}
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Gallery folders may be on slow network filesystems, so check them after
+	// releasing the database transaction.
+	for _, g := range folderGalleries {
+		isNoGallery, err := isNoGalleryFolder(g.Path)
+		if err != nil {
+			logger.Errorf("Error checking gallery marker files in %q: %v", g.Path, err)
+			continue
+		}
+
+		if isNoGallery {
+			markForClean(g, "Gallery folder contains .nogallery")
+		}
+	}
+
+	return toClean, nil
 }
 
 func (j *cleanJob) deleteGallery(ctx context.Context, id int) {
