@@ -6,6 +6,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestConfig_GetGalleryExtensionsDefault(t *testing.T) {
+	i := InitializeEmpty()
+
+	assert.Equal(t, []string{"zip", "cbz", "rar", "cbr"}, i.GetGalleryExtensions())
+}
+
 func TestConfig_GetAllPluginConfiguration(t *testing.T) {
 	i := InitializeEmpty()
 

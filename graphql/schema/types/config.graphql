@@ -174,7 +174,7 @@ input ConfigGeneralInput {
   videoExtensions: [String!]
   "Array of image file extensions"
   imageExtensions: [String!]
-  "Array of gallery zip file extensions"
+  "Array of gallery archive file extensions"
   galleryExtensions: [String!]
   "Array of file regexp to exclude from Video Scans"
   excludes: [String!]
@@ -324,7 +324,7 @@ type ConfigGeneralResult {
   videoExtensions: [String!]!
   "Array of image file extensions"
   imageExtensions: [String!]!
-  "Array of gallery zip file extensions"
+  "Array of gallery archive file extensions"
   galleryExtensions: [String!]!
   "True if galleries should be created from folders with images"
   createGalleriesFromFolders: Boolean!

@@ -46,7 +46,7 @@ type Scanner struct {
 	Repository            Repository
 	FingerprintCalculator FingerprintCalculator
 
-	// ZipFileExtensions is a list of file extensions that are considered zip files.
+	// ZipFileExtensions is a list of file extensions that are considered gallery archives.
 	// Extension does not include the . character.
 	ZipFileExtensions []string
 
@@ -398,7 +398,7 @@ func (s *Scanner) ScanFile(ctx context.Context, f ScannedFile) (*ScanFileResult,
 	return r, nil
 }
 
-// IsZipFile determines if the provided path is a zip file based on its extension.
+// IsZipFile determines if the provided path is a configured gallery archive based on its extension.
 func (s *Scanner) IsZipFile(path string) bool {
 	fExt := filepath.Ext(path)
 	for _, ext := range s.ZipFileExtensions {

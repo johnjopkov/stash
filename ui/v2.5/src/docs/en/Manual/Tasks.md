@@ -57,7 +57,7 @@ The scan task accepts the following options:
 | Generate thumbnails for images | Generates thumbnails for image files. | 
 | Generate image perceptual hashes | Generates perceptual hashes for image deduplication and identification. |
 | Generate previews for image clips | Generates a gif/looping video as thumbnail for image clips/gifs. |
-| Rescan files | By default, Stash will only rescan existing files if the file's modified date has been updated since its previous scan. Stash will rescan files in the path when this option is enabled, regardless of the file modification time. Only required if Stash needs to recalculate video/image metadata, or to rescan gallery zips. |
+| Rescan files | By default, Stash will only rescan existing files if the file's modified date has been updated since its previous scan. Stash will rescan files in the path when this option is enabled, regardless of the file modification time. Only required if Stash needs to recalculate video/image metadata, or to rescan gallery archives. |
 
 ## Auto tagging
 
