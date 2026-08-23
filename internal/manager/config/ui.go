@@ -62,18 +62,20 @@ func (e ImageLightboxDisplayMode) MarshalGQL(w io.Writer) {
 type ImageLightboxScrollMode string
 
 const (
-	ImageLightboxScrollModeZoom ImageLightboxScrollMode = "ZOOM"
-	ImageLightboxScrollModePanY ImageLightboxScrollMode = "PAN_Y"
+	ImageLightboxScrollModeZoom     ImageLightboxScrollMode = "ZOOM"
+	ImageLightboxScrollModePanY     ImageLightboxScrollMode = "PAN_Y"
+	ImageLightboxScrollModeNavigate ImageLightboxScrollMode = "NAVIGATE"
 )
 
 var AllImageLightboxScrollMode = []ImageLightboxScrollMode{
 	ImageLightboxScrollModeZoom,
 	ImageLightboxScrollModePanY,
+	ImageLightboxScrollModeNavigate,
 }
 
 func (e ImageLightboxScrollMode) IsValid() bool {
 	switch e {
-	case ImageLightboxScrollModeZoom, ImageLightboxScrollModePanY:
+	case ImageLightboxScrollModeZoom, ImageLightboxScrollModePanY, ImageLightboxScrollModeNavigate:
 		return true
 	}
 	return false

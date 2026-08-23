@@ -67,7 +67,7 @@ interface IProps {
   current: boolean;
   // set to true to align image with bottom instead of top
   alignBottom?: boolean;
-  setZoom: (v: number) => void;
+  setZoom: (v: number) => number;
   debouncedScrollReset: () => void;
   onLeft: () => void;
   onRight: () => void;
@@ -104,13 +104,14 @@ export const LightboxImage: React.FC<IProps> = ({
   const [boxHeight, setBoxHeight] = useState(0);
   const dimensionsProvided = width > 0 && height > 0;
 
-  const mouseDownEvent = useRef<MouseEvent>();
   const resetPositionRef = useRef(resetPosition);
 
   const container = React.createRef<HTMLDivElement>();
+  const wrapper = useRef<HTMLDivElement>(null);
   const startPoints = useRef<number[]>([0, 0]);
   const pointerCache = useRef<React.PointerEvent[]>([]);
   const prevDiff = useRef<number | undefined>();
+  const prevCenter = useRef<{ x: number; y: number }>();
 
   const scrollAttempts = useRef(0);
 
@@ -280,8 +281,9 @@ export const LightboxImage: React.FC<IProps> = ({
     if (ev.shiftKey) {
       switch (scrollMode) {
         case GQL.ImageLightboxScrollMode.Zoom:
-          return GQL.ImageLightboxScrollMode.PanY;
+          return GQL.ImageLightboxScrollMode.Navigate;
         case GQL.ImageLightboxScrollMode.PanY:
+        case GQL.ImageLightboxScrollMode.Navigate:
           return GQL.ImageLightboxScrollMode.Zoom;
       }
     }
@@ -380,6 +382,9 @@ export const LightboxImage: React.FC<IProps> = ({
   }
 
   function onImageScroll(ev: React.WheelEvent) {
+    const effectiveScrollMode = getScrollMode(ev);
+    if (effectiveScrollMode === GQL.ImageLightboxScrollMode.Navigate) return;
+
     const absDeltaY = Math.abs(ev.deltaY);
     const firstDeltaY = firstScroll.current;
     // detect infinite scrolling (mousepad, mouse with infinite scrollwheel)
@@ -390,7 +395,7 @@ export const LightboxImage: React.FC<IProps> = ({
       (firstDeltaY !== null &&
         Math.abs(firstDeltaY) < SCROLL_INFINITE_THRESHOLD);
 
-    switch (getScrollMode(ev)) {
+    switch (effectiveScrollMode) {
       case GQL.ImageLightboxScrollMode.Zoom: {
         let percent: number;
         if (infinite) {
@@ -398,7 +403,7 @@ export const LightboxImage: React.FC<IProps> = ({
         } else {
           percent = ev.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
         }
-        setZoom(zoom * percent);
+        setZoomAroundPoint(zoom * percent, ev.clientX, ev.clientY);
         break;
       }
       case GQL.ImageLightboxScrollMode.PanY:
@@ -436,34 +441,6 @@ export const LightboxImage: React.FC<IProps> = ({
   function onImageMouseDown(ev: React.MouseEvent) {
     startPoints.current = [ev.pageX, ev.pageY];
     setMoving(true);
-
-    mouseDownEvent.current = ev.nativeEvent;
-  }
-
-  function onImageMouseUp(ev: React.MouseEvent) {
-    if (ev.button !== 0) return;
-
-    if (
-      !mouseDownEvent.current ||
-      ev.timeStamp - mouseDownEvent.current.timeStamp > 200
-    ) {
-      // not a click - ignore
-      return;
-    }
-
-    // must be a click
-    if (
-      ev.pageX !== startPoints.current[0] ||
-      ev.pageY !== startPoints.current[1]
-    ) {
-      return;
-    }
-
-    if (ev.nativeEvent.offsetX >= (ev.target as HTMLElement).offsetWidth / 2) {
-      onRight();
-    } else {
-      onLeft();
-    }
   }
 
   function onTouchStart(ev: React.TouchEvent) {
@@ -487,6 +464,15 @@ export const LightboxImage: React.FC<IProps> = ({
     }
   }
 
+  function onTouchEnd(ev: React.TouchEvent) {
+    if (ev.touches.length === 1) {
+      startPoints.current = [ev.touches[0].pageX, ev.touches[0].pageY];
+      setMoving(true);
+    } else {
+      setMoving(false);
+    }
+  }
+
   function onPointerDown(ev: React.PointerEvent) {
     // replace pointer event with the same id, if applicable
     pointerCache.current = pointerCache.current.filter(
@@ -495,6 +481,7 @@ export const LightboxImage: React.FC<IProps> = ({
 
     pointerCache.current.push(ev);
     prevDiff.current = undefined;
+    prevCenter.current = undefined;
   }
 
   function onPointerUp(ev: React.PointerEvent) {
@@ -504,6 +491,36 @@ export const LightboxImage: React.FC<IProps> = ({
         break;
       }
     }
+    prevDiff.current = undefined;
+    prevCenter.current = undefined;
+  }
+
+  function setZoomAroundPoint(
+    requestedZoom: number,
+    clientX: number,
+    clientY: number,
+    previousClientX = clientX,
+    previousClientY = clientY
+  ) {
+    const appliedZoom = setZoom(requestedZoom);
+    const ratio = appliedZoom / zoom;
+    const rect = wrapper.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    setPositionX(
+      (value) =>
+        value +
+        (clientX - previousClientX) +
+        (1 - ratio) * (previousClientX - centerX)
+    );
+    setPositionY(
+      (value) =>
+        value +
+        (clientY - previousClientY) +
+        (1 - ratio) * (previousClientY - centerY)
+    );
   }
 
   function onPointerMove(ev: React.PointerEvent) {
@@ -522,19 +539,29 @@ export const LightboxImage: React.FC<IProps> = ({
       const diffX = Math.abs(ev1.clientX - ev2.clientX);
       const diffY = Math.abs(ev1.clientY - ev2.clientY);
       const diff = Math.sqrt(diffX ** 2 + diffY ** 2);
+      const center = {
+        x: (ev1.clientX + ev2.clientX) / 2,
+        y: (ev1.clientY + ev2.clientY) / 2,
+      };
 
-      if (prevDiff.current !== undefined) {
+      if (prevDiff.current !== undefined && prevCenter.current) {
         const diffDiff = diff - prevDiff.current;
         const factor = (Math.abs(diffDiff) / 20) * 0.1 + 1;
+        let requestedZoom = zoom;
+        if (diffDiff > 0) requestedZoom *= factor;
+        else if (diffDiff < 0) requestedZoom /= factor;
 
-        if (diffDiff > 0) {
-          setZoom(zoom * factor);
-        } else if (diffDiff < 0) {
-          setZoom((zoom * 1) / factor);
-        }
+        setZoomAroundPoint(
+          requestedZoom,
+          center.x,
+          center.y,
+          prevCenter.current.x,
+          prevCenter.current.y
+        );
       }
 
       prevDiff.current = diff;
+      prevCenter.current = center;
     }
   }
 
@@ -552,6 +579,7 @@ export const LightboxImage: React.FC<IProps> = ({
            an <img> with very large intrinsic dimensions distorts the
            image's aspect ratio. See #5087. */
         <div
+          ref={wrapper}
           className={`${CLASSNAME_IMAGE}-wrapper`}
           style={{
             transform: `translate(${positionX}px, ${positionY}px) scale(${
@@ -569,12 +597,15 @@ export const LightboxImage: React.FC<IProps> = ({
             style={{ touchAction: "none" }}
             onWheel={current ? (e) => onImageScroll(e) : undefined}
             onMouseDown={onImageMouseDown}
-            onMouseUp={onImageMouseUp}
+            onMouseUp={() => setMoving(false)}
             onMouseMove={onImageMouseOver}
             onTouchStart={onTouchStart}
             onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+            onTouchCancel={() => setMoving(false)}
             onPointerDown={onPointerDown}
             onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
             onPointerMove={onPointerMove}
           />
         </div>

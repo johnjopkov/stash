@@ -24,4 +24,5 @@ export const imageLightboxScrollModeIntlMap = new Map<
 >([
   [ImageLightboxScrollMode.Zoom, "dialogs.lightbox.scroll_mode.zoom"],
   [ImageLightboxScrollMode.PanY, "dialogs.lightbox.scroll_mode.pan_y"],
+  [ImageLightboxScrollMode.Navigate, "dialogs.lightbox.scroll_mode.navigate"],
 ]);
