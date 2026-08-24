@@ -34,6 +34,12 @@ type cleanJob struct {
 	scanSubs     *subscriptionManager
 }
 
+// galleryCleanCandidate avoids retaining full gallery models for large libraries.
+type galleryCleanCandidate struct {
+	id   int
+	path string
+}
+
 func (j *cleanJob) Execute(ctx context.Context, progress *job.Progress) error {
 	logger.Infof("Starting cleaning of tracked files")
 	start := time.Now()
@@ -94,7 +100,7 @@ func isNoGalleryFolder(path string) (bool, error) {
 func (j *cleanJob) findGalleriesToClean(ctx context.Context) ([]int, error) {
 	const batchSize = 1000
 	var toClean []int
-	var folderGalleries []*models.Gallery
+	var folderGalleries []galleryCleanCandidate
 	toCleanSet := make(map[int]struct{})
 	r := j.repository
 
@@ -102,14 +108,14 @@ func (j *cleanJob) findGalleriesToClean(ctx context.Context) ([]int, error) {
 		return g.Path != "" && (len(j.input.Paths) == 0 || fsutil.IsPathInDirs(j.input.Paths, g.Path))
 	}
 
-	markForClean := func(g *models.Gallery, reason string) {
-		if _, exists := toCleanSet[g.ID]; exists {
+	markForClean := func(id int, displayName, reason string) {
+		if _, exists := toCleanSet[id]; exists {
 			return
 		}
 
-		logger.Infof("%s. Marking to clean: %s", reason, g.DisplayName())
-		toCleanSet[g.ID] = struct{}{}
-		toClean = append(toClean, g.ID)
+		logger.Infof("%s. Marking to clean: %s", reason, displayName)
+		toCleanSet[id] = struct{}{}
+		toClean = append(toClean, id)
 	}
 
 	queryInBatches := func(ctx context.Context, galleryFilter *models.GalleryFilterType, visit func(*models.Gallery)) error {
@@ -141,16 +147,25 @@ func (j *cleanJob) findGalleriesToClean(ctx context.Context) ([]int, error) {
 		}
 		if err := queryInBatches(ctx, emptyGalleryFilter, func(g *models.Gallery) {
 			if inCleanPaths(g) {
-				markForClean(g, "Gallery has 0 images")
+				markForClean(g.ID, g.DisplayName(), "Gallery has 0 images")
 			}
 		}); err != nil {
 			return err
 		}
 
-		return queryInBatches(ctx, nil, func(g *models.Gallery) {
-			// .nogallery only applies to galleries created from folders.
-			if g.FolderID != nil && inCleanPaths(g) {
-				folderGalleries = append(folderGalleries, g)
+		folderGalleryFilter := &models.GalleryFilterType{
+			FoldersFilter: &models.FolderFilterType{
+				Path: &models.StringCriterionInput{
+					Modifier: models.CriterionModifierNotNull,
+				},
+			},
+		}
+		return queryInBatches(ctx, folderGalleryFilter, func(g *models.Gallery) {
+			if inCleanPaths(g) {
+				folderGalleries = append(folderGalleries, galleryCleanCandidate{
+					id:   g.ID,
+					path: g.Path,
+				})
 			}
 		})
 	})
@@ -161,14 +176,14 @@ func (j *cleanJob) findGalleriesToClean(ctx context.Context) ([]int, error) {
 	// Gallery folders may be on slow network filesystems, so check them after
 	// releasing the database transaction.
 	for _, g := range folderGalleries {
-		isNoGallery, err := isNoGalleryFolder(g.Path)
+		isNoGallery, err := isNoGalleryFolder(g.path)
 		if err != nil {
-			logger.Errorf("Error checking gallery marker files in %q: %v", g.Path, err)
+			logger.Errorf("Error checking gallery marker files in %q: %v", g.path, err)
 			continue
 		}
 
 		if isNoGallery {
-			markForClean(g, "Gallery folder contains .nogallery")
+			markForClean(g.id, g.path, "Gallery folder contains .nogallery")
 		}
 	}
 
