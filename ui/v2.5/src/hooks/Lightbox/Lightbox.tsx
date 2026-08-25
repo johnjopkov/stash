@@ -30,7 +30,10 @@ import {
 } from "src/core/StashService";
 import * as GQL from "src/core/generated-graphql";
 import { useInterfaceLocalForage } from "../LocalForage";
-import { imageLightboxDisplayModeIntlMap } from "src/core/enums";
+import {
+  imageLightboxDisplayModeIntlMap,
+  imageLightboxScrollModeIntlMap,
+} from "src/core/enums";
 import { ILightboxImage, IChapter } from "./types";
 import {
   faArrowLeft,
@@ -92,6 +95,9 @@ const MAX_CLICK_MOVEMENT = 5;
 const NAVIGATION_CLICK_EXCLUSION =
   "[data-lightbox-interactive], .popover, .modal";
 const IMAGE_CONTENT_SELECTOR = `.${CLASSNAME_IMAGE}-wrapper`;
+const DOM_DELTA_PIXEL = 0;
+const CONTINUOUS_WHEEL_DELTA_THRESHOLD = 10;
+const CONTINUOUS_WHEEL_NAVIGATION_THRESHOLD = 8;
 
 interface IProps {
   images: ILightboxImage[];
@@ -651,12 +657,62 @@ export const LightboxComponent: React.FC<IProps> = ({
     }
   };
 
+  const handleNavigationWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (
+      !allowNavigation ||
+      e.defaultPrevented ||
+      e.ctrlKey ||
+      e.deltaY === 0 ||
+      Math.abs(e.deltaY) <= Math.abs(e.deltaX) ||
+      showOptions ||
+      showChapters ||
+      deleteTarget !== null
+    ) {
+      return;
+    }
+
+    const target = e.target as Element;
+    if (target.closest(NAVIGATION_CLICK_EXCLUSION)) return;
+
+    const effectiveScrollMode = e.shiftKey
+      ? scrollMode === GQL.ImageLightboxScrollMode.Zoom
+        ? GQL.ImageLightboxScrollMode.Navigate
+        : GQL.ImageLightboxScrollMode.Zoom
+      : scrollMode;
+    if (effectiveScrollMode !== GQL.ImageLightboxScrollMode.Navigate) return;
+
+    const firstDeltaY = firstScroll.current;
+    const continuous =
+      e.deltaMode === DOM_DELTA_PIXEL &&
+      Math.abs(firstDeltaY ?? e.deltaY) < CONTINUOUS_WHEEL_DELTA_THRESHOLD;
+    if (continuous) accumulatedScroll.current += e.deltaY;
+    const deltaY = continuous ? accumulatedScroll.current : e.deltaY;
+    const shouldNavigate =
+      !continuous ||
+      (!inScrollGroup.current &&
+        Math.abs(deltaY) >= CONTINUOUS_WHEEL_NAVIGATION_THRESHOLD);
+
+    if (shouldNavigate) {
+      if (deltaY < 0) {
+        handleLeft();
+      } else {
+        handleRight();
+      }
+    }
+
+    if (continuous && shouldNavigate) inScrollGroup.current = true;
+    if (firstDeltaY === null) firstScroll.current = e.deltaY;
+    debouncedScrollReset();
+  };
+
   const firstScroll = useRef<number | null>(null);
   const inScrollGroup = useRef(false);
+  const accumulatedScroll = useRef(0);
 
   const debouncedScrollReset = useDebounce(() => {
     firstScroll.current = null;
     inScrollGroup.current = false;
+    accumulatedScroll.current = 0;
   }, SCROLL_ZOOM_TIMEOUT);
 
   useEffect(() => {
@@ -972,22 +1028,13 @@ export const LightboxComponent: React.FC<IProps> = ({
                 value={scrollMode}
                 className="btn-secondary mx-1 mb-1"
               >
-                <option
-                  value={GQL.ImageLightboxScrollMode.Zoom}
-                  key={GQL.ImageLightboxScrollMode.Zoom}
-                >
-                  {intl.formatMessage({
-                    id: "dialogs.lightbox.scroll_mode.zoom",
-                  })}
-                </option>
-                <option
-                  value={GQL.ImageLightboxScrollMode.PanY}
-                  key={GQL.ImageLightboxScrollMode.PanY}
-                >
-                  {intl.formatMessage({
-                    id: "dialogs.lightbox.scroll_mode.pan_y",
-                  })}
-                </option>
+                {Array.from(imageLightboxScrollModeIntlMap.entries()).map(
+                  ([mode, message]) => (
+                    <option value={mode} key={mode}>
+                      {intl.formatMessage({ id: message })}
+                    </option>
+                  )
+                )}
               </Form.Control>
             </Col>
           </Form.Group>
@@ -1316,6 +1363,7 @@ export const LightboxComponent: React.FC<IProps> = ({
       })}
       role="presentation"
       ref={containerRef}
+      onWheel={handleNavigationWheel}
       onPointerDown={handleNavigationPointerDown}
       onPointerMove={handleControlsPointerMove}
       onPointerUp={handleNavigationPointerUp}

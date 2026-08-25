@@ -279,8 +279,9 @@ export const LightboxImage: React.FC<IProps> = ({
     if (ev.shiftKey) {
       switch (scrollMode) {
         case GQL.ImageLightboxScrollMode.Zoom:
-          return GQL.ImageLightboxScrollMode.PanY;
+          return GQL.ImageLightboxScrollMode.Navigate;
         case GQL.ImageLightboxScrollMode.PanY:
+        case GQL.ImageLightboxScrollMode.Navigate:
           return GQL.ImageLightboxScrollMode.Zoom;
       }
     }
@@ -379,6 +380,9 @@ export const LightboxImage: React.FC<IProps> = ({
   }
 
   function onImageScroll(ev: React.WheelEvent) {
+    const effectiveScrollMode = getScrollMode(ev);
+    if (effectiveScrollMode === GQL.ImageLightboxScrollMode.Navigate) return;
+
     const absDeltaY = Math.abs(ev.deltaY);
     const firstDeltaY = firstScroll.current;
     // detect infinite scrolling (mousepad, mouse with infinite scrollwheel)
@@ -389,7 +393,7 @@ export const LightboxImage: React.FC<IProps> = ({
       (firstDeltaY !== null &&
         Math.abs(firstDeltaY) < SCROLL_INFINITE_THRESHOLD);
 
-    switch (getScrollMode(ev)) {
+    switch (effectiveScrollMode) {
       case GQL.ImageLightboxScrollMode.Zoom: {
         let percent: number;
         if (infinite) {
