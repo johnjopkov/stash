@@ -104,7 +104,6 @@ export const LightboxImage: React.FC<IProps> = ({
   const [boxHeight, setBoxHeight] = useState(0);
   const dimensionsProvided = width > 0 && height > 0;
 
-  const mouseDownEvent = useRef<MouseEvent>();
   const resetPositionRef = useRef(resetPosition);
 
   const container = React.createRef<HTMLDivElement>();
@@ -436,34 +435,6 @@ export const LightboxImage: React.FC<IProps> = ({
   function onImageMouseDown(ev: React.MouseEvent) {
     startPoints.current = [ev.pageX, ev.pageY];
     setMoving(true);
-
-    mouseDownEvent.current = ev.nativeEvent;
-  }
-
-  function onImageMouseUp(ev: React.MouseEvent) {
-    if (ev.button !== 0) return;
-
-    if (
-      !mouseDownEvent.current ||
-      ev.timeStamp - mouseDownEvent.current.timeStamp > 200
-    ) {
-      // not a click - ignore
-      return;
-    }
-
-    // must be a click
-    if (
-      ev.pageX !== startPoints.current[0] ||
-      ev.pageY !== startPoints.current[1]
-    ) {
-      return;
-    }
-
-    if (ev.nativeEvent.offsetX >= (ev.target as HTMLElement).offsetWidth / 2) {
-      onRight();
-    } else {
-      onLeft();
-    }
   }
 
   function onTouchStart(ev: React.TouchEvent) {
@@ -569,7 +540,7 @@ export const LightboxImage: React.FC<IProps> = ({
             style={{ touchAction: "none" }}
             onWheel={current ? (e) => onImageScroll(e) : undefined}
             onMouseDown={onImageMouseDown}
-            onMouseUp={onImageMouseUp}
+            onMouseUp={() => setMoving(false)}
             onMouseMove={onImageMouseOver}
             onTouchStart={onTouchStart}
             onTouchMove={onTouchMove}

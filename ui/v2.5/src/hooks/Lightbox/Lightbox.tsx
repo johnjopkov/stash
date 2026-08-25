@@ -88,6 +88,10 @@ const MIN_VALID_INTERVAL_SECONDS = 1;
 const MIN_ZOOM = 0.1;
 const SCROLL_ZOOM_TIMEOUT = 250;
 const ZOOM_NONE_EPSILON = 0.015;
+const MAX_CLICK_MOVEMENT = 5;
+const NAVIGATION_CLICK_EXCLUSION =
+  "[data-lightbox-interactive], .popover, .modal";
+const IMAGE_CONTENT_SELECTOR = `.${CLASSNAME_IMAGE}-wrapper`;
 
 interface IProps {
   images: ILightboxImage[];
@@ -154,7 +158,12 @@ export const LightboxComponent: React.FC<IProps> = ({
   const [deleteTarget, setDeleteTarget] = useState<ILightboxImage | null>(null);
   const lastDKeyTime = useRef<number>(0);
   const [navOffset, setNavOffset] = useState<React.CSSProperties | undefined>();
-  const suppressBackdropClick = useRef(false);
+  const navigationPointerDown = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+    moved: boolean;
+  }>();
 
   // An in-flight page switch's intended landing, set synchronously by
   // startPageSwitch *before* pageCallback. The landing is an explicit target —
@@ -492,16 +501,6 @@ export const LightboxComponent: React.FC<IProps> = ({
     [hide]
   );
 
-  const handleClose = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (suppressBackdropClick.current) {
-      suppressBackdropClick.current = false;
-      return;
-    }
-
-    const { className } = e.target as Element;
-    if (className?.includes?.(CLASSNAME_IMAGE)) close();
-  };
-
   const handleLeft = useCallback(
     (isUserAction = true) => {
       if (isSwitchingPageRef.current) return;
@@ -554,26 +553,54 @@ export const LightboxComponent: React.FC<IProps> = ({
     [images, pageCallback, index, disableAnimation, setInstant, startPageSwitch]
   );
 
-  const handleControlsPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    suppressBackdropClick.current = false;
-    if (e.pointerType === "mouse") return;
-
-    const edgeHeight = Math.max(
-      e.currentTarget.clientHeight * CONTROLS_EDGE_RATIO,
-      CONTROLS_TOUCH_EDGE_MIN_PX
-    );
-    const inTouchRevealZone =
-      e.clientY <= edgeHeight ||
-      e.clientY >= e.currentTarget.clientHeight - edgeHeight;
-
-    if (inTouchRevealZone) {
-      suppressBackdropClick.current = true;
-      revealControls();
+  const handleNavigationPointerDown = (
+    e: React.PointerEvent<HTMLDivElement>
+  ) => {
+    if (!e.isPrimary) {
+      navigationPointerDown.current = undefined;
+      return;
     }
+
+    if (e.pointerType !== "mouse") {
+      const edgeHeight = Math.max(
+        e.currentTarget.clientHeight * CONTROLS_EDGE_RATIO,
+        CONTROLS_TOUCH_EDGE_MIN_PX
+      );
+      if (
+        e.clientY <= edgeHeight ||
+        e.clientY >= e.currentTarget.clientHeight - edgeHeight
+      ) {
+        navigationPointerDown.current = undefined;
+        revealControls();
+        return;
+      }
+    }
+
+    navigationPointerDown.current =
+      e.button === 0
+        ? {
+            pointerId: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            moved: false,
+          }
+        : undefined;
   };
 
   const handleControlsPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.pointerType !== "mouse" || e.buttons !== 0) return;
+    const start = navigationPointerDown.current;
+    if (start?.pointerId === e.pointerId && !start.moved) {
+      start.moved =
+        Math.hypot(e.clientX - start.x, e.clientY - start.y) >
+        MAX_CLICK_MOVEMENT;
+    }
+
+    if (
+      (e.pointerType !== "mouse" && e.pointerType !== "pen") ||
+      e.buttons !== 0
+    ) {
+      return;
+    }
 
     const edgeX = e.currentTarget.clientWidth * CONTROLS_EDGE_RATIO;
     const edgeY = e.currentTarget.clientHeight * CONTROLS_EDGE_RATIO;
@@ -585,6 +612,45 @@ export const LightboxComponent: React.FC<IProps> = ({
 
     if (inRevealZone) revealControls();
   };
+
+  const handleNavigationPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const start = navigationPointerDown.current;
+    navigationPointerDown.current = undefined;
+
+    if (
+      e.button !== 0 ||
+      !e.isPrimary ||
+      !start ||
+      start.pointerId !== e.pointerId ||
+      start.moved ||
+      deleteTarget !== null
+    ) {
+      return;
+    }
+
+    const target = e.target as Element;
+    if (target.closest(NAVIGATION_CLICK_EXCLUSION)) return;
+
+    if (!allowNavigation) {
+      if (!target.closest(IMAGE_CONTENT_SELECTOR)) close();
+      return;
+    }
+
+    if (e.clientX < e.currentTarget.clientWidth / 2) {
+      handleLeft();
+    } else {
+      handleRight();
+    }
+  };
+
+  const handleNavigationPointerCancel = (
+    e: React.PointerEvent<HTMLDivElement>
+  ) => {
+    if (navigationPointerDown.current?.pointerId === e.pointerId) {
+      navigationPointerDown.current = undefined;
+    }
+  };
+
   const firstScroll = useRef<number | null>(null);
   const inScrollGroup = useRef(false);
 
@@ -1250,9 +1316,10 @@ export const LightboxComponent: React.FC<IProps> = ({
       })}
       role="presentation"
       ref={containerRef}
-      onClick={handleClose}
-      onPointerDown={handleControlsPointerDown}
+      onPointerDown={handleNavigationPointerDown}
       onPointerMove={handleControlsPointerMove}
+      onPointerUp={handleNavigationPointerUp}
+      onPointerCancel={handleNavigationPointerCancel}
     >
       {renderBody()}
       {deleteTarget?.id !== undefined && (
