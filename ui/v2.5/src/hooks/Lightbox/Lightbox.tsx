@@ -34,7 +34,13 @@ import {
   imageLightboxDisplayModeIntlMap,
   imageLightboxScrollModeIntlMap,
 } from "src/core/enums";
-import { ILightboxImage, IChapter } from "./types";
+import {
+  ILightboxImage,
+  IChapter,
+  LightboxStreamLoader,
+  LightboxViewMode,
+} from "./types";
+import { LightboxStream } from "./LightboxStream";
 import {
   faArrowLeft,
   faArrowRight,
@@ -67,6 +73,8 @@ const CLASSNAME_INDICATOR = `${CLASSNAME_HEADER}-indicator`;
 const CLASSNAME_OPTIONS = `${CLASSNAME_HEADER}-options`;
 const CLASSNAME_OPTIONS_ICON = `${CLASSNAME_OPTIONS}-icon`;
 const CLASSNAME_OPTIONS_INLINE = `${CLASSNAME_OPTIONS}-inline`;
+const CLASSNAME_OPTIONS_POPOVER = `${CLASSNAME_OPTIONS}-popover`;
+const CLASSNAME_WALL_SIZE = `${CLASSNAME_OPTIONS}-wall-size`;
 const CLASSNAME_RIGHT = `${CLASSNAME_HEADER}-right`;
 const CLASSNAME_FOOTER = `${CLASSNAME}-footer`;
 const CLASSNAME_FOOTER_LEFT = `${CLASSNAME_FOOTER}-left`;
@@ -111,6 +119,7 @@ interface IProps {
   pages?: number;
   pageSize?: number;
   totalCount?: number;
+  streamLoader?: LightboxStreamLoader;
   pageCallback?: (props: { direction?: number; page?: number }) => void;
   chapters?: IChapter[];
   hide: (reason?: LightboxHideReason) => void;
@@ -126,8 +135,10 @@ export const LightboxComponent: React.FC<IProps> = ({
   slideshowEnabled = false,
   slideshowAutostart = false,
   page,
+  pages,
   pageSize = 40,
   totalCount,
+  streamLoader,
   pageCallback,
   chapters = [],
   hide,
@@ -156,6 +167,13 @@ export const LightboxComponent: React.FC<IProps> = ({
   const [showChapters, setShowChapters] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [controlsEngaged, setControlsEngaged] = useState(false);
+  const [activeStreamImage, setActiveStreamImage] = useState<{
+    image: ILightboxImage;
+    globalIndex: number;
+  }>();
+  const [removedImageIds, setRemovedImageIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const [imagesLoaded, setImagesLoaded] = useState(0);
   // The image the delete dialog acts on, captured when the dialog is opened.
   // Reading images[currentIndex] at confirm time instead would delete whatever
@@ -269,7 +287,49 @@ export const LightboxComponent: React.FC<IProps> = ({
   const [interfaceLocalForage, setInterfaceLocalForage] =
     useInterfaceLocalForage();
 
+  const handleActiveStreamImage = useCallback(
+    (image: ILightboxImage, globalIndex: number) => {
+      setActiveStreamImage({ image, globalIndex });
+    },
+    []
+  );
+
+  const handleStreamError = useCallback(
+    (error: unknown) => Toast.error(error),
+    [Toast]
+  );
+
   const lightboxSettings = interfaceLocalForage.data?.imageLightbox;
+  const viewMode =
+    interfaceLocalForage.data?.imageLightboxViewMode ?? LightboxViewMode.Stream;
+  const wallSingleColumn =
+    interfaceLocalForage.data?.imageLightboxWallSingleColumn ?? true;
+  const wallSize = Math.max(
+    0,
+    Math.min(3, interfaceLocalForage.data?.imageLightboxWallSize ?? 2)
+  );
+
+  function setViewMode(value: LightboxViewMode) {
+    setActiveStreamImage(undefined);
+    setInterfaceLocalForage((prev) => ({
+      ...prev,
+      imageLightboxViewMode: value,
+    }));
+  }
+
+  function setWallSingleColumn(value: boolean) {
+    setInterfaceLocalForage((prev) => ({
+      ...prev,
+      imageLightboxWallSingleColumn: value,
+    }));
+  }
+
+  function setWallSize(value: number) {
+    setInterfaceLocalForage((prev) => ({
+      ...prev,
+      imageLightboxWallSize: Math.max(0, Math.min(3, value)),
+    }));
+  }
 
   function setLightboxSettings(v: Partial<GQL.ConfigImageLightboxInput>) {
     setInterfaceLocalForage((prev) => {
@@ -356,6 +416,12 @@ export const LightboxComponent: React.FC<IProps> = ({
 
   const [displayedSlideshowInterval, setDisplayedSlideshowInterval] =
     useState<string>((slideshowDelay / SECONDS_TO_MS).toString());
+
+  useEffect(() => {
+    if (viewMode === LightboxViewMode.Stream) {
+      setSlideshowInterval(null);
+    }
+  }, [viewMode]);
 
   useEffect(() => {
     const target = pendingTarget.current;
@@ -625,6 +691,7 @@ export const LightboxComponent: React.FC<IProps> = ({
     navigationPointerDown.current = undefined;
 
     if (
+      viewMode !== LightboxViewMode.Carousel ||
       e.button !== 0 ||
       !e.isPrimary ||
       !start ||
@@ -660,6 +727,7 @@ export const LightboxComponent: React.FC<IProps> = ({
 
   const handleNavigationWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     if (
+      viewMode !== LightboxViewMode.Carousel ||
       !allowNavigation ||
       e.defaultPrevented ||
       e.ctrlKey ||
@@ -726,15 +794,28 @@ export const LightboxComponent: React.FC<IProps> = ({
   const handleKey = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === "Tab") revealControls();
-      if (e.repeat && (e.key === "ArrowRight" || e.key === "ArrowLeft"))
+      if (
+        viewMode === LightboxViewMode.Carousel &&
+        e.repeat &&
+        (e.key === "ArrowRight" || e.key === "ArrowLeft")
+      ) {
         setInstant();
-      if (e.key === "ArrowLeft") handleLeft();
-      else if (e.key === "ArrowRight") handleRight();
-      else if (e.key === "Escape") close();
+      }
+      if (viewMode === LightboxViewMode.Carousel && e.key === "ArrowLeft") {
+        handleLeft();
+      } else if (
+        viewMode === LightboxViewMode.Carousel &&
+        e.key === "ArrowRight"
+      ) {
+        handleRight();
+      } else if (e.key === "Escape") close();
       else if (e.key === "d") {
         // Not while a page switch is in flight: the index is parked at 0 then,
         // so the shortcut would target an image the user isn't viewing.
-        const image = images[index ?? initialIndex];
+        const image =
+          viewMode === LightboxViewMode.Stream
+            ? activeStreamImage?.image
+            : images[index ?? initialIndex];
         if (!isSwitchingPageRef.current && image?.id !== undefined) {
           const now = Date.now();
           if (now - lastDKeyTime.current < 1000) {
@@ -753,6 +834,8 @@ export const LightboxComponent: React.FC<IProps> = ({
       index,
       initialIndex,
       revealControls,
+      viewMode,
+      activeStreamImage,
     ]
   );
 
@@ -883,6 +966,18 @@ export const LightboxComponent: React.FC<IProps> = ({
   }
 
   function chapterHeader() {
+    if (
+      viewMode === LightboxViewMode.Stream &&
+      activeStreamImage !== undefined
+    ) {
+      let streamChapterTitle = "";
+      chapters.forEach((chapter) => {
+        if (chapter.image_index > activeStreamImage.globalIndex + 1) return;
+        streamChapterTitle = chapter.title;
+      });
+      return streamChapterTitle;
+    }
+
     const imageNumber = (index ?? 0) + 1;
     const globalIndex = page
       ? (page - 1) * pageSize + imageNumber
@@ -932,119 +1027,193 @@ export const LightboxComponent: React.FC<IProps> = ({
   function renderOptionsForm() {
     return (
       <>
-        {slideshowEnabled ? (
-          <Form.Group controlId="delay" as={Row} className="form-container">
-            <Col xs={4}>
-              <Form.Label className="col-form-label">
-                <FormattedMessage id="dialogs.lightbox.delay" />
-              </Form.Label>
-            </Col>
-            <Col xs={8}>
-              <Form.Control
-                type="number"
-                className="text-input"
-                min={1}
-                value={displayedSlideshowInterval ?? 0}
-                onChange={onDelayChange}
-                size="sm"
-              />
-            </Col>
-          </Form.Group>
-        ) : undefined}
-
-        <Form.Group controlId="displayMode" as={Row}>
+        <Form.Group controlId="viewMode" as={Row}>
           <Col xs={4}>
             <Form.Label className="col-form-label">
-              <FormattedMessage id="dialogs.lightbox.display_mode.label" />
+              <FormattedMessage id="dialogs.lightbox.view_mode.label" />
             </Form.Label>
           </Col>
           <Col xs={8}>
             <Form.Control
               as="select"
-              onChange={(e) =>
-                setDisplayMode(e.target.value as GQL.ImageLightboxDisplayMode)
-              }
-              value={displayMode}
+              onChange={(e) => setViewMode(e.target.value as LightboxViewMode)}
+              value={viewMode}
               className="btn-secondary mx-1 mb-1"
             >
-              {Array.from(imageLightboxDisplayModeIntlMap.entries()).map(
-                (v) => (
-                  <option key={v[0]} value={v[0]}>
-                    {intl.formatMessage({
-                      id: v[1],
-                    })}
-                  </option>
-                )
-              )}
+              <option value={LightboxViewMode.Carousel}>
+                {intl.formatMessage({
+                  id: "dialogs.lightbox.view_mode.carousel",
+                })}
+              </option>
+              <option value={LightboxViewMode.Stream}>
+                {intl.formatMessage({
+                  id: "dialogs.lightbox.view_mode.stream",
+                })}
+              </option>
             </Form.Control>
           </Col>
         </Form.Group>
-        <Form.Group>
-          <Form.Group controlId="scaleUp" as={Row} className="mb-1">
-            <Col>
+
+        {viewMode === LightboxViewMode.Carousel ? (
+          <>
+            {slideshowEnabled ? (
+              <Form.Group controlId="delay" as={Row} className="form-container">
+                <Col xs={4}>
+                  <Form.Label className="col-form-label">
+                    <FormattedMessage id="dialogs.lightbox.delay" />
+                  </Form.Label>
+                </Col>
+                <Col xs={8}>
+                  <Form.Control
+                    type="number"
+                    className="text-input"
+                    min={1}
+                    value={displayedSlideshowInterval ?? 0}
+                    onChange={onDelayChange}
+                    size="sm"
+                  />
+                </Col>
+              </Form.Group>
+            ) : undefined}
+
+            <Form.Group controlId="displayMode" as={Row}>
+              <Col xs={4}>
+                <Form.Label className="col-form-label">
+                  <FormattedMessage id="dialogs.lightbox.display_mode.label" />
+                </Form.Label>
+              </Col>
+              <Col xs={8}>
+                <Form.Control
+                  as="select"
+                  onChange={(e) =>
+                    setDisplayMode(
+                      e.target.value as GQL.ImageLightboxDisplayMode
+                    )
+                  }
+                  value={displayMode}
+                  className="btn-secondary mx-1 mb-1"
+                >
+                  {Array.from(imageLightboxDisplayModeIntlMap.entries()).map(
+                    (v) => (
+                      <option key={v[0]} value={v[0]}>
+                        {intl.formatMessage({
+                          id: v[1],
+                        })}
+                      </option>
+                    )
+                  )}
+                </Form.Control>
+              </Col>
+            </Form.Group>
+            <Form.Group>
+              <Form.Group controlId="scaleUp" as={Row} className="mb-1">
+                <Col>
+                  <Form.Check
+                    type="checkbox"
+                    label={intl.formatMessage({
+                      id: "dialogs.lightbox.scale_up.label",
+                    })}
+                    checked={scaleUp}
+                    disabled={
+                      displayMode === GQL.ImageLightboxDisplayMode.Original
+                    }
+                    onChange={(v) => setScaleUp(v.currentTarget.checked)}
+                  />
+                </Col>
+              </Form.Group>
+              <Form.Text className="text-muted">
+                {intl.formatMessage({
+                  id: "dialogs.lightbox.scale_up.description",
+                })}
+              </Form.Text>
+            </Form.Group>
+            <Form.Group>
+              <Form.Group controlId="resetZoomOnNav" as={Row} className="mb-1">
+                <Col>
+                  <Form.Check
+                    type="checkbox"
+                    label={intl.formatMessage({
+                      id: "dialogs.lightbox.reset_zoom_on_nav",
+                    })}
+                    checked={resetZoomOnNav}
+                    onChange={(v) => setResetZoomOnNav(v.currentTarget.checked)}
+                  />
+                </Col>
+              </Form.Group>
+            </Form.Group>
+            <Form.Group controlId="scrollMode">
+              <Form.Group as={Row} className="mb-1">
+                <Col xs={4}>
+                  <Form.Label className="col-form-label">
+                    <FormattedMessage id="dialogs.lightbox.scroll_mode.label" />
+                  </Form.Label>
+                </Col>
+                <Col xs={8}>
+                  <Form.Control
+                    as="select"
+                    onChange={(e) =>
+                      setScrollMode(
+                        e.target.value as GQL.ImageLightboxScrollMode
+                      )
+                    }
+                    value={scrollMode}
+                    className="btn-secondary mx-1 mb-1"
+                  >
+                    {Array.from(imageLightboxScrollModeIntlMap.entries()).map(
+                      ([mode, message]) => (
+                        <option value={mode} key={mode}>
+                          {intl.formatMessage({ id: message })}
+                        </option>
+                      )
+                    )}
+                  </Form.Control>
+                </Col>
+              </Form.Group>
+              <Form.Text className="text-muted">
+                {intl.formatMessage({
+                  id: "dialogs.lightbox.scroll_mode.description",
+                })}
+              </Form.Text>
+            </Form.Group>
+          </>
+        ) : (
+          <>
+            <Form.Group controlId="wallSingleColumn" className="mb-2">
               <Form.Check
                 type="checkbox"
                 label={intl.formatMessage({
-                  id: "dialogs.lightbox.scale_up.label",
+                  id: "dialogs.lightbox.view_mode.single_column",
                 })}
-                checked={scaleUp}
-                disabled={displayMode === GQL.ImageLightboxDisplayMode.Original}
-                onChange={(v) => setScaleUp(v.currentTarget.checked)}
-              />
-            </Col>
-          </Form.Group>
-          <Form.Text className="text-muted">
-            {intl.formatMessage({
-              id: "dialogs.lightbox.scale_up.description",
-            })}
-          </Form.Text>
-        </Form.Group>
-        <Form.Group>
-          <Form.Group controlId="resetZoomOnNav" as={Row} className="mb-1">
-            <Col>
-              <Form.Check
-                type="checkbox"
-                label={intl.formatMessage({
-                  id: "dialogs.lightbox.reset_zoom_on_nav",
-                })}
-                checked={resetZoomOnNav}
-                onChange={(v) => setResetZoomOnNav(v.currentTarget.checked)}
-              />
-            </Col>
-          </Form.Group>
-        </Form.Group>
-        <Form.Group controlId="scrollMode">
-          <Form.Group as={Row} className="mb-1">
-            <Col xs={4}>
-              <Form.Label className="col-form-label">
-                <FormattedMessage id="dialogs.lightbox.scroll_mode.label" />
-              </Form.Label>
-            </Col>
-            <Col xs={8}>
-              <Form.Control
-                as="select"
-                onChange={(e) =>
-                  setScrollMode(e.target.value as GQL.ImageLightboxScrollMode)
+                checked={wallSingleColumn}
+                onChange={(event) =>
+                  setWallSingleColumn(event.currentTarget.checked)
                 }
-                value={scrollMode}
-                className="btn-secondary mx-1 mb-1"
-              >
-                {Array.from(imageLightboxScrollModeIntlMap.entries()).map(
-                  ([mode, message]) => (
-                    <option value={mode} key={mode}>
-                      {intl.formatMessage({ id: message })}
-                    </option>
-                  )
-                )}
-              </Form.Control>
-            </Col>
-          </Form.Group>
-          <Form.Text className="text-muted">
-            {intl.formatMessage({
-              id: "dialogs.lightbox.scroll_mode.description",
-            })}
-          </Form.Text>
-        </Form.Group>
+              />
+            </Form.Group>
+            <Form.Group controlId="wallSize" as={Row} className="mb-1">
+              <Col xs={4}>
+                <Form.Label className="col-form-label">
+                  <FormattedMessage id="dialogs.lightbox.view_mode.image_size" />
+                </Form.Label>
+              </Col>
+              <Col xs={8} className={CLASSNAME_WALL_SIZE}>
+                <Form.Control
+                  type="range"
+                  min={0}
+                  max={3}
+                  value={wallSize}
+                  disabled={wallSingleColumn}
+                  aria-label={intl.formatMessage({
+                    id: "dialogs.lightbox.view_mode.image_size",
+                  })}
+                  onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
+                    setWallSize(Number.parseInt(event.currentTarget.value, 10))
+                  }
+                />
+              </Col>
+            </Form.Group>
+          </>
+        )}
       </>
     );
   }
@@ -1066,7 +1235,10 @@ export const LightboxComponent: React.FC<IProps> = ({
       return <LoadingIndicator />;
     }
 
-    const currentImage: ILightboxImage | undefined = images[currentIndex];
+    const currentImage: ILightboxImage | undefined =
+      viewMode === LightboxViewMode.Stream
+        ? (activeStreamImage?.image ?? images[currentIndex])
+        : images[currentIndex];
     const title = currentImage ? imageTitle(currentImage) : undefined;
 
     function setRating(v: number | null) {
@@ -1110,15 +1282,21 @@ export const LightboxComponent: React.FC<IProps> = ({
     }
 
     const currentNumber =
-      page !== undefined
-        ? (page - 1) * pageSize + currentIndex + 1
-        : currentIndex + 1;
+      viewMode === LightboxViewMode.Stream && activeStreamImage
+        ? activeStreamImage.globalIndex + 1
+        : page !== undefined
+          ? (page - 1) * pageSize + currentIndex + 1
+          : currentIndex + 1;
     const displayTotal = totalCount ?? images.length;
 
     return (
       <>
         <div className={CLASSNAME_HEADER} {...controlsEngagementProps}>
-          <div className={CLASSNAME_LEFT_SPACER}>{renderChapterMenu()}</div>
+          <div className={CLASSNAME_LEFT_SPACER}>
+            {viewMode === LightboxViewMode.Carousel
+              ? renderChapterMenu()
+              : undefined}
+          </div>
           <div className={CLASSNAME_INDICATOR}>
             <span>{chapterHeader()}</span>
             {displayTotal > 1 ? (
@@ -1148,7 +1326,7 @@ export const LightboxComponent: React.FC<IProps> = ({
                 >
                   {({ placement, arrowProps, show: _show, ...props }) => (
                     <div
-                      className="popover"
+                      className={cx("popover", CLASSNAME_OPTIONS_POPOVER)}
                       {...props}
                       style={{ ...props.style }}
                     >
@@ -1166,7 +1344,7 @@ export const LightboxComponent: React.FC<IProps> = ({
                 {renderOptionsForm()}
               </InputGroup>
             </div>
-            {slideshowEnabled && (
+            {viewMode === LightboxViewMode.Carousel && slideshowEnabled && (
               <Button
                 variant="link"
                 onClick={toggleSlideshow}
@@ -1175,7 +1353,7 @@ export const LightboxComponent: React.FC<IProps> = ({
                 <Icon icon={slideshowInterval !== null ? faPause : faPlay} />
               </Button>
             )}
-            {zoom !== 1 && (
+            {viewMode === LightboxViewMode.Carousel && zoom !== 1 && (
               <Button
                 variant="link"
                 onClick={() => {
@@ -1205,88 +1383,108 @@ export const LightboxComponent: React.FC<IProps> = ({
             </Button>
           </div>
         </div>
-        <div className={CLASSNAME_DISPLAY}>
-          {allowNavigation && (
-            <Button
-              variant="link"
-              onClick={() => handleLeft()}
-              className={`${CLASSNAME_NAVBUTTON} d-none d-lg-block`}
-              {...controlsEngagementProps}
-            >
-              <Icon icon={faChevronLeft} />
-            </Button>
-          )}
+        {viewMode === LightboxViewMode.Carousel ? (
+          <div className={CLASSNAME_DISPLAY}>
+            {allowNavigation && (
+              <Button
+                variant="link"
+                onClick={() => handleLeft()}
+                className={`${CLASSNAME_NAVBUTTON} d-none d-lg-block`}
+                {...controlsEngagementProps}
+              >
+                <Icon icon={faChevronLeft} />
+              </Button>
+            )}
 
-          <div
-            className={cx(CLASSNAME_CAROUSEL, {
-              [CLASSNAME_INSTANT]: instantTransition,
-            })}
-            style={{ left: `${currentIndex * -100}vw` }}
-            ref={carouselRef}
-          >
-            {images.map((image, i) => (
-              <div className={`${CLASSNAME_IMAGE}`} key={image.paths.image}>
-                {i >= currentIndex - 1 && i <= currentIndex + 1 ? (
-                  <LightboxImage
-                    src={image.paths.image ?? ""}
-                    width={image.visual_files?.[0]?.width ?? 0}
-                    height={image.visual_files?.[0]?.height ?? 0}
-                    displayMode={displayMode}
-                    scaleUp={scaleUp}
-                    scrollMode={scrollMode}
-                    resetPosition={resetPosition}
-                    zoom={i === currentIndex ? zoom : 1}
-                    scrollAttemptsBeforeChange={scrollAttemptsBeforeChange}
-                    firstScroll={firstScroll}
-                    inScrollGroup={inScrollGroup}
-                    current={i === currentIndex}
-                    alignBottom={movingLeft}
-                    setZoom={updateZoom}
-                    debouncedScrollReset={debouncedScrollReset}
-                    onLeft={handleLeft}
-                    onRight={handleRight}
-                    isVideo={isVideo(image.visual_files?.[0] ?? {})}
-                  />
-                ) : undefined}
-              </div>
-            ))}
-          </div>
+            <div
+              className={cx(CLASSNAME_CAROUSEL, {
+                [CLASSNAME_INSTANT]: instantTransition,
+              })}
+              style={{ left: `${currentIndex * -100}vw` }}
+              ref={carouselRef}
+            >
+              {images.map((image, i) => (
+                <div className={`${CLASSNAME_IMAGE}`} key={image.paths.image}>
+                  {i >= currentIndex - 1 && i <= currentIndex + 1 ? (
+                    <LightboxImage
+                      src={image.paths.image ?? ""}
+                      width={image.visual_files?.[0]?.width ?? 0}
+                      height={image.visual_files?.[0]?.height ?? 0}
+                      displayMode={displayMode}
+                      scaleUp={scaleUp}
+                      scrollMode={scrollMode}
+                      resetPosition={resetPosition}
+                      zoom={i === currentIndex ? zoom : 1}
+                      scrollAttemptsBeforeChange={scrollAttemptsBeforeChange}
+                      firstScroll={firstScroll}
+                      inScrollGroup={inScrollGroup}
+                      current={i === currentIndex}
+                      alignBottom={movingLeft}
+                      setZoom={updateZoom}
+                      debouncedScrollReset={debouncedScrollReset}
+                      onLeft={handleLeft}
+                      onRight={handleRight}
+                      isVideo={isVideo(image.visual_files?.[0] ?? {})}
+                    />
+                  ) : undefined}
+                </div>
+              ))}
+            </div>
 
-          {allowNavigation && (
-            <Button
-              variant="link"
-              onClick={() => handleRight()}
-              className={`${CLASSNAME_NAVBUTTON} d-none d-lg-block`}
-              {...controlsEngagementProps}
-            >
-              <Icon icon={faChevronRight} />
-            </Button>
-          )}
-        </div>
-        {showNavigation && !isFullscreen && images.length > 1 && (
-          <div
-            className={CLASSNAME_NAV}
-            style={navOffset}
-            ref={navRef}
-            {...controlsEngagementProps}
-          >
-            <Button
-              variant="link"
-              onClick={() => setIndex(images.length - 1)}
-              className={CLASSNAME_NAVBUTTON}
-            >
-              <Icon icon={faArrowLeft} className="mr-4" />
-            </Button>
-            {navItems}
-            <Button
-              variant="link"
-              onClick={() => setIndex(0)}
-              className={CLASSNAME_NAVBUTTON}
-            >
-              <Icon icon={faArrowRight} className="ml-4" />
-            </Button>
+            {allowNavigation && (
+              <Button
+                variant="link"
+                onClick={() => handleRight()}
+                className={`${CLASSNAME_NAVBUTTON} d-none d-lg-block`}
+                {...controlsEngagementProps}
+              >
+                <Icon icon={faChevronRight} />
+              </Button>
+            )}
           </div>
+        ) : (
+          <LightboxStream
+            images={images}
+            initialIndex={currentIndex}
+            page={page ?? 1}
+            pages={pages ?? Math.max(1, Math.ceil(displayTotal / pageSize))}
+            pageSize={pageSize}
+            totalCount={displayTotal}
+            streamLoader={streamLoader}
+            singleColumn={wallSingleColumn}
+            wallSize={wallSize}
+            removedImageIds={removedImageIds}
+            onActiveImage={handleActiveStreamImage}
+            onError={handleStreamError}
+          />
         )}
+        {viewMode === LightboxViewMode.Carousel &&
+          showNavigation &&
+          !isFullscreen &&
+          images.length > 1 && (
+            <div
+              className={CLASSNAME_NAV}
+              style={navOffset}
+              ref={navRef}
+              {...controlsEngagementProps}
+            >
+              <Button
+                variant="link"
+                onClick={() => setIndex(images.length - 1)}
+                className={CLASSNAME_NAVBUTTON}
+              >
+                <Icon icon={faArrowLeft} className="mr-4" />
+              </Button>
+              {navItems}
+              <Button
+                variant="link"
+                onClick={() => setIndex(0)}
+                className={CLASSNAME_NAVBUTTON}
+              >
+                <Icon icon={faArrowRight} className="ml-4" />
+              </Button>
+            </div>
+          )}
         <div className={CLASSNAME_FOOTER} {...controlsEngagementProps}>
           <div className={CLASSNAME_FOOTER_LEFT}>
             {currentImage?.id !== undefined && (
@@ -1381,7 +1579,17 @@ export const LightboxComponent: React.FC<IProps> = ({
           ]}
           onClose={(confirmed) => {
             setDeleteTarget(null);
-            if (confirmed) onDeleteImage?.(deleteTarget.id!);
+            if (confirmed) {
+              setRemovedImageIds((current) => {
+                const next = new Set(current);
+                next.add(deleteTarget.id!);
+                return next;
+              });
+              setActiveStreamImage((current) =>
+                current?.image.id === deleteTarget.id ? undefined : current
+              );
+              onDeleteImage?.(deleteTarget.id!);
+            }
           }}
         />
       )}

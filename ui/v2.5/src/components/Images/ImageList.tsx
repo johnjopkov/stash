@@ -67,6 +67,8 @@ import { OrganizedCriterionOption } from "src/models/list-filter/criteria/organi
 import { SidebarAgeFilter } from "../List/Filters/SidebarAgeFilter";
 import { PerformerAgeCriterionOption } from "src/models/list-filter/images";
 import { SidebarFolderFilter } from "../List/Filters/FolderFilter";
+import { imageThumbnailSrcSet } from "src/utils/imageSources";
+import { ILightboxPage } from "src/hooks/Lightbox/types";
 
 interface IImageWallProps {
   images: GQL.SlimImageDataFragment[];
@@ -117,6 +119,10 @@ const ImageWall: React.FC<IImageWallProps> = ({
         image.paths.preview !== ""
           ? image.paths.preview!
           : image.paths.thumbnail!,
+      srcSet:
+        image.paths.preview !== ""
+          ? undefined
+          : imageThumbnailSrcSet(image.paths.thumbnail),
       width: image.visual_files?.[0]?.width ?? 0,
       height: image.visual_files?.[0]?.height ?? 0,
       tabIndex: index,
@@ -263,6 +269,23 @@ const ImageList: React.FC<IImageListImages> = PatchComponent(
       setSlideshowRunning(false);
     }, [setSlideshowRunning]);
 
+    const streamLoader = useCallback(
+      async (page: number): Promise<ILightboxPage> => {
+        const filterCopy = cloneDeep(filter);
+        filterCopy.currentPage = page;
+        const response = await queryFindImages(filterCopy);
+        const responseTotal = response.data.findImages.count;
+
+        return {
+          images: response.data.findImages.images,
+          page,
+          pages: Math.ceil(responseTotal / filterCopy.itemsPerPage),
+          totalCount: responseTotal,
+        };
+      },
+      [filter]
+    );
+
     const lightboxState = useMemo(() => {
       return {
         images,
@@ -272,6 +295,7 @@ const ImageList: React.FC<IImageListImages> = PatchComponent(
         pages: pageCount,
         pageSize: filter.itemsPerPage,
         totalCount,
+        streamLoader,
         slideshowEnabled: slideshowRunning,
         onClose: handleClose,
       };
@@ -282,6 +306,7 @@ const ImageList: React.FC<IImageListImages> = PatchComponent(
       filter.currentPage,
       filter.itemsPerPage,
       slideshowRunning,
+      streamLoader,
       handleClose,
       handleLightBoxPage,
     ]);

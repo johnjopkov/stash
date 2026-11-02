@@ -1051,6 +1051,13 @@
         "navigate": "Navigate images",
         "pan_y": "Pan Y",
         "zoom": "Zoom"
+      },
+      "view_mode": {
+        "carousel": "Single image",
+        "image_size": "Image size",
+        "label": "Layout",
+        "single_column": "Single column",
+        "stream": "Wall"
       }
     },
     "merge": {

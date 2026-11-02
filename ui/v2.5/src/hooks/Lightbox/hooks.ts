@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef } from "react";
 import * as GQL from "src/core/generated-graphql";
 import { useToast } from "../Toast";
 import { IState, useLightboxContext } from "./context";
-import { IChapter } from "./types";
+import { IChapter, ILightboxPage } from "./types";
+import { getClient } from "src/core/StashService";
 
 export const useLightbox = (
   state: Partial<Omit<IState, "isVisible">> = {},
@@ -19,6 +20,7 @@ export const useLightbox = (
       pages: state.pages,
       pageSize: state.pageSize,
       totalCount: state.totalCount,
+      streamLoader: state.streamLoader,
       slideshowEnabled: state.slideshowEnabled,
       onClose: state.onClose,
     });
@@ -31,6 +33,7 @@ export const useLightbox = (
     state.pages,
     state.pageSize,
     state.totalCount,
+    state.streamLoader,
     state.slideshowEnabled,
     state.onClose,
   ]);
@@ -44,6 +47,7 @@ export const useLightbox = (
         pages: props.pages ?? state.pages,
         pageSize: props.pageSize ?? state.pageSize,
         totalCount: props.totalCount ?? state.totalCount,
+        streamLoader: props.streamLoader ?? state.streamLoader,
         chapters: chapters,
       });
     },
@@ -53,6 +57,7 @@ export const useLightbox = (
       state.pages,
       state.pageSize,
       state.totalCount,
+      state.streamLoader,
       chapters,
     ]
   );
@@ -133,6 +138,7 @@ export const useGalleriesLightbox = () => {
           pages,
           pageSize,
           totalCount,
+          streamLoader: loadStreamPage,
           chapters: current.chapters,
           slideshowEnabled: current.slideshowEnabled,
           slideshowAutostart: current.slideshowAutostart,
@@ -144,6 +150,34 @@ export const useGalleriesLightbox = () => {
         // Surface the error so the stall is at least explained.
         Toast.error(e);
       });
+  }
+
+  async function loadStreamPage(page: number): Promise<ILightboxPage> {
+    const current = active.current;
+    if (!current) {
+      return { images: [], page, pages: 0, totalCount: 0 };
+    }
+
+    const result = await getClient().query<GQL.FindImagesQuery>({
+      query: GQL.FindImagesDocument,
+      variables: {
+        filter: { page, per_page: pageSize, sort: "path" },
+        image_filter: {
+          galleries: {
+            modifier: GQL.CriterionModifier.Includes,
+            value: [current.id],
+          },
+        },
+      },
+    });
+
+    const totalCount = result.data.findImages.count;
+    return {
+      images: result.data.findImages.images,
+      page,
+      pages: Math.ceil(totalCount / pageSize),
+      totalCount,
+    };
   }
 
   function handleLightBoxPage(props: { direction?: number; page?: number }) {
@@ -194,6 +228,7 @@ export const useGalleriesLightbox = () => {
       pageCallback: undefined,
       page: undefined,
       pageSize,
+      streamLoader: loadStreamPage,
       chapters,
       slideshowEnabled,
       slideshowAutostart,

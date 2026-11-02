@@ -18,6 +18,7 @@
     display: flex;
     height: var(--lightbox-header-height);
     left: 0;
+    padding-top: env(safe-area-inset-top);
     position: absolute;
     right: 0;
     top: 0;
@@ -69,6 +70,28 @@
       &-inline {
         display: none;
       }
+
+      &-popover {
+        max-height: calc(100vh - 5rem);
+        max-width: calc(100vw - 1rem);
+        overflow-y: auto;
+        width: 22rem;
+
+        .form-control {
+          max-width: 100%;
+          min-width: 0;
+          text-overflow: ellipsis;
+        }
+      }
+
+      &-wall-size {
+        align-items: center;
+        display: flex;
+
+        input[type="range"] {
+          width: 100%;
+        }
+      }
     }
 
     &-right {
@@ -91,6 +114,7 @@
     display: flex;
     height: var(--lightbox-footer-height);
     left: 0;
+    padding-bottom: env(safe-area-inset-bottom);
     position: absolute;
     right: 0;
     transition:
@@ -220,7 +244,7 @@
   }
 
   &-nav {
-    bottom: calc(var(--lightbox-footer-height) + 1rem);
+    bottom: calc(var(--lightbox-footer-height) + 1rem + env(safe-area-inset-bottom));
     display: flex;
     flex-direction: row;
     height: 10rem;
@@ -245,6 +269,70 @@
       cursor: pointer;
       height: 100%;
       margin-right: 1rem;
+    }
+  }
+
+  &-stream {
+    height: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    width: 100%;
+
+    &-item {
+      background-color: rgba(0, 0, 0, 0.25);
+      content-visibility: auto;
+      overflow: hidden;
+
+      img,
+      video {
+        display: block;
+        height: 100%;
+        object-fit: cover;
+        width: 100%;
+      }
+    }
+
+    &-loading {
+      align-items: center;
+      display: flex;
+      height: 6rem;
+      justify-content: center;
+    }
+
+    &-single-column {
+      align-items: center;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+    }
+
+    &-single-item {
+      align-items: center;
+      box-sizing: border-box;
+      display: flex;
+      flex: 0 0 auto;
+      height: 100dvh;
+      justify-content: center;
+      width: 100%;
+
+      &:not(:last-child) {
+        border-bottom: 2px solid rgba(255, 255, 255, 0.25);
+      }
+
+      img,
+      video {
+        height: auto;
+        max-height: 100%;
+        max-width: 100%;
+        object-fit: contain;
+        width: auto;
+      }
+    }
+
+    &-sentinel {
+      height: 1px;
+      width: 100%;
     }
   }
 

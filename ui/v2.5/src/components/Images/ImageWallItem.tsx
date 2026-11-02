@@ -51,7 +51,6 @@ export const ImageWallItem: React.FC<RenderImageProps & IExtraProps> = (
   };
 
   const video = props.photo.src.includes("preview");
-  const ImagePreview = video ? "video" : "img";
 
   let shiftKey = false;
 
@@ -74,18 +73,35 @@ export const ImageWallItem: React.FC<RenderImageProps & IExtraProps> = (
           }}
         />
       )}
-      <ImagePreview
-        loop={video}
-        muted={video}
-        playsInline={video}
-        autoPlay={video}
-        key={props.photo.key}
-        src={props.photo.src}
-        width={width}
-        height={height}
-        alt={props.photo.alt}
-        onClick={handleClick}
-      />
+      {video ? (
+        <video
+          loop
+          muted
+          playsInline
+          autoPlay
+          key={props.photo.key}
+          src={props.photo.src}
+          width={width}
+          height={height}
+          onClick={handleClick}
+        />
+      ) : (
+        <img
+          key={props.photo.key}
+          src={props.photo.src}
+          srcSet={
+            Array.isArray(props.photo.srcSet)
+              ? props.photo.srcSet.join(", ")
+              : props.photo.srcSet
+          }
+          sizes={`${Math.ceil(width)}px`}
+          width={width}
+          height={height}
+          alt={props.photo.alt}
+          loading="lazy"
+          onClick={handleClick}
+        />
+      )}
     </div>
   );
 };
